@@ -10,17 +10,18 @@ from torchmetrics.audio import ShortTimeObjectiveIntelligibility, PerceptualEval
 from tqdm import tqdm
 import time
 import math
+import soundfile as sf
 
 # ==========================================
 # 1. CONFIGURATION
 # ==========================================
-MODEL_PATH = "DCCRN_Conformer.pth"       
-TEST_DATASET_ROOT = r"D:\test_dataset"
-OUTPUT_DIR = "evaluation_Conformer"    
+MODEL_PATH = "reverb_Conformer.pth"       
+TEST_DATASET_ROOT = r"../Test_Dataset/reverb"
+OUTPUT_DIR = "evaluation_reverb"    
 SAMPLE_RATE = 16000
 N_FFT = 512
 HOP_LENGTH = 128
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cpu")
 
 # ==========================================
 # 2. MODEL COMPONENTS
@@ -359,7 +360,15 @@ class DCCRNConformer(nn.Module):
 # 5. UTILITY FUNCTIONS
 # ==========================================
 def load_audio(path, target_len=None):
-    waveform, sr = torchaudio.load(path)
+    # Use soundfile directly to avoid TorchCodec dependency in torchaudio v2.10+
+    data, sr = sf.read(path, dtype='float32')
+    # Convert to torch tensor and add channel dimension if needed
+    waveform = torch.from_numpy(data)
+    if waveform.dim() == 1:
+        waveform = waveform.unsqueeze(0)  # [samples] -> [1, samples]
+    else:
+        waveform = waveform.T  # [samples, channels] -> [channels, samples]
+    
     if sr != SAMPLE_RATE:
         resampler = torchaudio.transforms.Resample(sr, SAMPLE_RATE)
         waveform = resampler(waveform)
@@ -532,9 +541,9 @@ def run_evaluation():
             tgt_trim = target[..., :min_len]
             
             os.makedirs(OUTPUT_DIR, exist_ok=True)
-            torchaudio.save(os.path.join(OUTPUT_DIR, f"BEST_OVERALL_output.wav"), est_trim.cpu(), SAMPLE_RATE)
-            torchaudio.save(os.path.join(OUTPUT_DIR, f"BEST_OVERALL_mixture.wav"), mixture.squeeze(0).cpu(), SAMPLE_RATE)
-            torchaudio.save(os.path.join(OUTPUT_DIR, f"BEST_OVERALL_target.wav"), tgt_trim.cpu(), SAMPLE_RATE)
+            torchaudio.save(os.path.join(OUTPUT_DIR, f"BEST_OVERALL_output.wav"), est_trim.cpu(), SAMPLE_RATE, backend="soundfile")
+            torchaudio.save(os.path.join(OUTPUT_DIR, f"BEST_OVERALL_mixture.wav"), mixture.squeeze(0).cpu(), SAMPLE_RATE, backend="soundfile")
+            torchaudio.save(os.path.join(OUTPUT_DIR, f"BEST_OVERALL_target.wav"), tgt_trim.cpu(), SAMPLE_RATE, backend="soundfile")
             print(f"Saved audio files to {OUTPUT_DIR}")
     except Exception as e:
         print(f"Error saving best case: {e}")
