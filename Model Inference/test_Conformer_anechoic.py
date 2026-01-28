@@ -15,9 +15,9 @@ import soundfile as sf
 # ==========================================
 # 1. CONFIGURATION
 # ==========================================
-MODEL_PATH = "reverb_Conformer.pth"       
-TEST_DATASET_ROOT = r"../Test_Dataset/reverb"
-OUTPUT_DIR = "evaluation_reverb"    
+MODEL_PATH = "anechoic_Conformer.pth"       
+TEST_DATASET_ROOT = r"../Test_Dataset/anechoic"
+OUTPUT_DIR = "evaluation_anechoic"    
 SAMPLE_RATE = 16000
 N_FFT = 512
 HOP_LENGTH = 128
