@@ -164,7 +164,33 @@ Creates self-contained `Submission/` folder ready for competition.
 
 ---
 
-## 📊 Metrics
+## � Evaluation Results
+
+### Anechoic Condition (5,000 samples)
+
+| Category | SI-SDR (dB) | STOI | PESQ |
+|----------|-------------|------|------|
+| **Best Overall** | 16.91 | 0.950 | 2.64 |
+| Male + Noise | 16.91 | 0.950 | 2.64 |
+| Male + Music | 13.46 | 0.956 | 2.54 |
+| Male + Female | 12.96 | 0.959 | 2.64 |
+
+**Inference:** 50.6ms avg (59x real-time for 3s audio)
+
+### Reverberant Condition (5,000 samples)
+
+| Category | SI-SDR (dB) | STOI | PESQ |
+|----------|-------------|------|------|
+| **Best Overall** | 12.49 | 0.942 | 2.48 |
+| Male + Noise | 12.62 | 0.850 | 2.00 |
+| Male + Music | 11.58 | 0.886 | 2.27 |
+| Male + Female | 12.49 | 0.942 | 2.48 |
+
+**Inference:** 50.5ms avg (59x real-time for 3s audio)
+
+---
+
+## �📊 Metrics
 
 | Metric | Description |
 |--------|-------------|
