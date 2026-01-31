@@ -15,18 +15,18 @@ import math
 # ==========================================
 # 1. CONFIGURATION
 # ==========================================
-DATASET_ROOT = r"./final_reverb_fixed"
+DATASET_ROOT = r"../Dataset/reverb_train" # or ../Dataset/anechoic_train
 BATCH_SIZE = 4
-LEARNING_RATE = 2e-5  # Lower LR for fine-tuning
-N_EPOCHS = 10         # Quick fine-tune
+LEARNING_RATE = 1e-4  
+N_EPOCHS = 50         
 N_FFT = 512
 HOP_LENGTH = 128
-SILENCE_PROB = 0.0
+SILENCE_PROB = 0.2
 NUM_WORKERS = 4
-DEVICE = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Resume training from checkpoint (set to None to train from scratch)
-RESUME_FROM = "DCCRN_Conformer.pth"  # or None
+RESUME_FROM = "reverb_Conformer.pth"  # or None or anechoic_Conformer.pth
 
 # ==========================================
 # 2. DATASET LOADER
@@ -557,7 +557,7 @@ def count_parameters(model):
 
 
 def main():
-    print(f"--- DCCRN-Conformer Training on {DEVICE} ---")
+    print(f"--- Conformer Training on {DEVICE} ---")
     
     full_dataset = RoomAcousticDataset(DATASET_ROOT, silence_prob=SILENCE_PROB)
     train_size = int(0.95 * len(full_dataset))
@@ -632,7 +632,7 @@ def main():
         
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
-            torch.save(model.state_dict(), "DCCRN_Conformer.pth")
+            torch.save(model.state_dict(), "reverb_Conformer.pth") # or anechoic_Conformer.pth
             print(">>> New Best Model Saved!")
             
     print("Training Complete.")

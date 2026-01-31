@@ -15,13 +15,13 @@ import soundfile as sf
 # ==========================================
 # 1. CONFIGURATION
 # ==========================================
-MODEL_PATH = "reverb_Conformer.pth"       
-TEST_DATASET_ROOT = r"../Test_Dataset/reverb"
-OUTPUT_DIR = "evaluation_reverb"    
+MODEL_PATH = "anechoic_Conformer.pth"       
+TEST_DATASET_ROOT = r"../Test_Dataset/anechoic"
+OUTPUT_DIR = "evaluation_anechoic"   # or evaluations_anechoic 
 SAMPLE_RATE = 16000
 N_FFT = 512
 HOP_LENGTH = 128
-DEVICE = torch.device("cpu")
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # ==========================================
 # 2. MODEL COMPONENTS
@@ -382,7 +382,7 @@ def count_parameters(model):
 # 6. MAIN EVALUATION LOOP
 # ==========================================
 def run_evaluation():
-    print(f"--- Running DCCRN-Conformer Evaluation on {DEVICE} ---")
+    print(f"--- Running Conformer Evaluation on {DEVICE} ---")
     
     # 1. Load Model
     model = DCCRNConformer(n_fft=N_FFT, hop_length=HOP_LENGTH).to(DEVICE)
@@ -490,7 +490,7 @@ def run_evaluation():
     best_pesq = pesq_arr[best_idx]
 
     print("\n" + "="*40)
-    print("   DCCRN-CONFORMER EVALUATION REPORT")
+    print("   CONFORMER EVALUATION REPORT")
     print("="*40)
     print(f"Total Samples:   {len(results['sisdr'])}")
     # Helper function to find best sample in a category
@@ -529,6 +529,7 @@ def run_evaluation():
         ("BEST FEMALE", "Female", None),
         ("BEST MALE + NOISE", "Male", "Noise"),
         ("BEST MALE + MUSIC", "Male", "Music"),
+        ("BEST MALE + FEMALE", "Male", "Female"),
     ]
     
     for cat_name, src_filter, interf_filter in categories:
