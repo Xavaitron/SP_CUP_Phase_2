@@ -1,6 +1,6 @@
-# SP CUP Phase 2 - Audio Source Separation with DCCRN-Conformer
+# SP CUP Phase 2 - Audio Source Separation with Conformer
 
-A deep learning solution for angle-conditioned audio source separation using a DCCRN-Conformer architecture.
+Angle-conditioned audio source separation using a DCCRNConformer architecture for IEEE Signal Processing Cup 2026.
 
 ---
 
@@ -8,195 +8,163 @@ A deep learning solution for angle-conditioned audio source separation using a D
 
 ```
 SP_CUP_Phase_2/
-├── Dataset Generation/          # MATLAB scripts for dataset creation
-│   ├── train_anechoic.mlx       # Training dataset (anechoic conditions)
-│   ├── train_reverb.mlx         # Training dataset (reverberant conditions)
-│   ├── test_anechoic.mlx        # Test dataset (anechoic conditions)
-│   └── test_reverb.mlx          # Test dataset (reverberant conditions)
+├── Dataset Generation/              # MATLAB scripts for synthetic dataset creation
+│   ├── train_anechoic.m             # Training data (150k samples, RT60=0.0)
+│   ├── train_reverb.m               # Training data (150k samples, RT60=0.5)
+│   ├── test_anechoic.m              # Test data (5k samples, fixed 90°/40° angles)
+│   └── test_reverb.m                # Test data (5k samples, fixed 90°/40° angles)
 │
-├── Model Inference/             # Python training and inference scripts
-│   ├── train_Conformer.py       # Training script
-│   ├── test_Conformer.py        # Evaluation script
-│   ├── inference_Conformer.py   # Single-file inference script
-│   ├── anechoic_Conformer.pth   # Pretrained model (anechoic)
-│   └── reverb_Conformer.pth     # Pretrained model (reverberant)
+├── Model Inference/                 # Python training, testing, and inference
+│   ├── train_Conformer.py           # Training script
+│   ├── test_Conformer.py            # Evaluation script (SI-SDR, STOI, PESQ)
+│   ├── inference_Conformer.py       # Single-file inference
+│   ├── anechoic_Conformer.pth       # Trained model (anechoic)
+│   ├── reverb_Conformer.pth         # Trained model (reverberant)
+│   ├── evaluation_anechoic/         # Evaluation outputs
+│   └── evaluation_reverb/           # Evaluation outputs
 │
-├── Test_Dataset/                # Test datasets (gitignored)
-│   ├── anechoic/                # Anechoic test samples
-│   └── reverb/                  # Reverberant test samples
+├── Submission/                      # Self-contained competition submission
+│   ├── Task1_Anechoic/
+│   │   ├── Task1_Anechoic_5dB.mat
+│   │   ├── anechoic_Conformer.pth
+│   │   ├── process_task1.py
+│   │   └── [audio files]
+│   └── Task2_Reverberant/
+│       ├── Task2_Reverberant_5dB.mat
+│       ├── reverb_Conformer.pth
+│       ├── process_task2.py
+│       └── [audio files]
 │
-├── requirements.txt             # Python dependencies
-├── .gitignore                   # Git ignore rules
-└── README.md                    # This file
+├── prepare_submission.m             # Generates submission folder from evaluation
+├── requirements.txt                 # Python dependencies
+└── README.md
 ```
 
 ---
 
 ## 🔧 Requirements
 
-### Python Dependencies
-
-Install all dependencies using the requirements file:
-
+### Python
 ```bash
 pip install -r requirements.txt
 ```
 
-Or install manually with **stable versions** (avoiding torchcodec issues):
-
-```bash
-pip install torch==2.6.0 torchaudio==2.6.0 torchmetrics==1.8.2 numpy==2.4.1 tqdm soundfile pesq pystoi
-```
-
-| Package | Version | Notes |
-|---------|---------|-------|
-| Python | >= 3.10 | Required |
-| torch | 2.6.0 | Stable (avoids torchcodec issues in 2.10+) |
+| Package | Version | Purpose |
+|---------|---------|---------|
+| torch | 2.6.0 | Deep learning |
 | torchaudio | 2.6.0 | Audio I/O |
-| torchmetrics | 1.8.2 | PESQ, STOI, SI-SDR metrics |
-| numpy | 2.4.1 | Latest stable |
-| soundfile | latest | Audio I/O backend |
-| pesq | latest | Required for PESQ metric |
-| pystoi | latest | Required for STOI metric |
-| tqdm | latest | Progress bars |
+| torchmetrics | 1.8.2 | PESQ, STOI, SI-SDR |
+| soundfile | latest | Audio backend |
+| pesq, pystoi | latest | Metrics |
 
-### MATLAB (for dataset generation)
-
-- MATLAB R2020b or later
+### MATLAB
+- MATLAB R2020b+
 - Signal Processing Toolbox
+- Parallel Computing Toolbox
+- `rir_generator` MEX function
 
 ---
 
-## 🚀 Pipeline Overview
+## 🚀 Pipeline
 
-### Step 1: Dataset Generation (MATLAB)
+### 1. Dataset Generation (MATLAB)
 
-Generate synthetic training/test datasets with room acoustics simulation.
-
-```
-Dataset Generation/
-├── train_anechoic.mlx   → Generates anechoic training samples
-├── train_reverb.mlx     → Generates reverberant training samples  
-├── test_anechoic.mlx    → Generates anechoic test samples
-└── test_reverb.mlx      → Generates reverberant test samples
+```matlab
+cd "Dataset Generation"
+train_anechoic   % 150k samples, RT60=0.0, random angles
+train_reverb     % 150k samples, RT60=0.5, random angles
+test_anechoic    % 5k samples, RT60=0.0, fixed angles (90°/40°)
+test_reverb      % 5k samples, RT60=0.5, fixed angles (90°/40°)
 ```
 
-**Output Format** (per sample folder):
+**Output per sample:**
 ```
 sample_XXXXX/
-├── mixture.wav        # Stereo mixture (target + interferer)
-├── target.wav         # Ground-truth target audio
-└── meta.json          # Metadata: {"target_angle": 45.0, "interf_angle": 135.0}
+├── mixture.wav      # Stereo (target + interferer + noise)
+├── target.wav       # Ground truth
+├── interference.wav # Scaled interferer
+└── meta.json        # {target_angle, interf_angle, rt60, ...}
 ```
+
+**Settings:** SIR=0dB, SNR=5dB, 16kHz, 4s duration
 
 ---
 
-### Step 2: Training
-
-Edit configuration in `train_Conformer.py`:
-
-```python
-# Configuration (lines 18-29)
-DATASET_ROOT = r"./your_training_dataset"   # Path to dataset
-BATCH_SIZE = 4                              # Adjust for GPU memory
-LEARNING_RATE = 2e-5                        # Learning rate
-N_EPOCHS = 10                               # Training epochs
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# Resume from checkpoint (or set to None to train from scratch)
-RESUME_FROM = "DCCRN_Conformer.pth"  # or None
-```
-
-**Run Training:**
+### 2. Training
 
 ```bash
 cd "Model Inference"
 python train_Conformer.py
 ```
 
-**Output:**
-- `DCCRN_Conformer.pth` - Saved model checkpoint (best validation loss)
+Edit config in script:
+```python
+DATASET_ROOT = r"../Train_Dataset/reverb"  # or anechoic
+RESUME_FROM = "reverb_Conformer.pth"       # or None
+```
 
 ---
 
-### Step 3: Evaluation
-
-Evaluate model performance on test dataset with SI-SDR, STOI, and PESQ metrics.
-
-Edit configuration in `test_Conformer.py`:
-
-```python
-# Configuration (lines 17-23)
-MODEL_PATH = "DCCRN_Conformer.pth"           # Model checkpoint
-TEST_DATASET_ROOT = r"D:\test_dataset"       # Path to test dataset
-OUTPUT_DIR = "evaluation_Conformer"          # Output directory
-```
-
-**Run Evaluation:**
+### 3. Evaluation
 
 ```bash
 cd "Model Inference"
 python test_Conformer.py
 ```
 
-**Output:**
-- Console report with best SI-SDR, STOI, PESQ scores
-- Audio files saved to `evaluation_Conformer/`:
-  - `BEST_OVERALL_output.wav` - Model output
-  - `BEST_OVERALL_mixture.wav` - Input mixture
-  - `BEST_OVERALL_target.wav` - Ground truth
+Edit config:
+```python
+MODEL_PATH = "anechoic_Conformer.pth"
+TEST_DATASET_ROOT = r"../Test_Dataset/anechoic"
+OUTPUT_DIR = "evaluation_anechoic"
+```
+
+**Outputs:** Best samples by category (Overall, Male+Female, Male+Music, Male+Noise)
 
 ---
 
-### Step 4: Single-File Inference
-
-Process a single audio file with a specified target angle.
-
-**Usage:**
+### 4. Single-File Inference
 
 ```bash
-cd "Model Inference"
-python inference_Conformer.py --input mixture.wav --angle 45 --output output.wav
+python inference_Conformer.py -i input.wav -a 90 -o output.wav -m reverb_Conformer.pth -d cuda
 ```
 
-**Arguments:**
+| Arg | Description |
+|-----|-------------|
+| `-i` | Input stereo audio |
+| `-a` | Target angle (0-180°) |
+| `-o` | Output file |
+| `-m` | Model checkpoint |
+| `-d` | Device (cpu/cuda) |
 
-| Argument | Short | Description | Default |
-|----------|-------|-------------|---------|
-| `--input` | `-i` | Input stereo audio file | Required |
-| `--angle` | `-a` | Target angle (0-180°) | Required |
-| `--output` | `-o` | Output audio file | `output.wav` |
-| `--model` | `-m` | Model checkpoint path | `DCCRN_Conformer.pth` |
-| `--device` | `-d` | Device (cpu/cuda) | `cpu` |
+---
 
-**Example:**
+### 5. Generate Submission
 
 ```bash
-# Extract source at 90 degrees using GPU
-python inference_Conformer.py -i stereo_mix.wav -a 90 -o extracted.wav -d cuda
+matlab -batch "run('prepare_submission.m')"
 ```
 
-> **Note:** Audio is automatically trimmed/padded to 3 seconds (model's fixed input size)
+Creates self-contained `Submission/` folder ready for competition.
 
 ---
 
 ## 🏗️ Model Architecture
 
-**DCCRN-Conformer** (~10M parameters)
+**DCCRNConformer** (~10M parameters)
 
-- **Encoder**: Complex 2D convolutions (48 → 96 → 192 → 256 channels)
-- **Bottleneck**: Dual-path Conformer (frequency + time processing)
-- **Decoder**: Complex transposed convolutions with skip connections
-- **Angle Conditioning**: MLP-based angle embedding injection
+| Component | Details |
+|-----------|---------|
+| Encoder | Complex Conv2d: 2→48→96→192→256 |
+| Bottleneck | Dual-Path Conformer (3 blocks, 4 heads) |
+| Decoder | Complex ConvTranspose2d with skip connections |
+| Conditioning | Angle MLP injection at bottleneck |
 
-**Audio Processing:**
-- Sample Rate: 16 kHz
-- STFT: n_fft=512, hop_length=128
-- Fixed Duration: 3 seconds
+**Audio:** 16kHz, STFT n_fft=512, hop=128, 3s fixed input
 
 ---
 
-## 📊 Evaluation Metrics
+## 📊 Metrics
 
 | Metric | Description |
 |--------|-------------|
@@ -209,40 +177,24 @@ python inference_Conformer.py -i stereo_mix.wav -a 90 -o extracted.wav -d cuda
 ## 📋 Quick Start
 
 ```bash
-# 1. Clone/navigate to the repo
+# Setup
 cd SP_CUP_Phase_2
-
-# 2. (Recommended) Create virtual environment
-python -m venv venv
-# Windows:
-.\venv\Scripts\activate
-# Linux/Mac:
-source venv/bin/activate
-
-# 3. Install dependencies
 pip install -r requirements.txt
 
-# 4. Run inference with pretrained model
+# Inference
 cd "Model Inference"
-python inference_Conformer.py -i your_audio.wav -a 45 -o output.wav -m reverb_Conformer.pth
+python inference_Conformer.py -i audio.wav -a 90 -o out.wav -d cuda
 
-# 5. (Optional) Evaluate on test set
+# Evaluate
 python test_Conformer.py
 
-# 6. (Optional) Train your own model
-python train_Conformer.py
+# Generate submission
+cd ..
+matlab -batch "run('prepare_submission.m')"
 ```
 
 ---
 
-## 📝 Notes
+##  License
 
-- **Stereo Input Required**: Input audio must be stereo (2 channels). Mono files are automatically duplicated.
-- **GPU Recommended**: Training and evaluation are significantly faster on CUDA-enabled GPUs.
-- **Model Selection**: Use `anechoic_Conformer.pth` for clean audio, `reverb_Conformer.pth` for reverberant environments.
-
----
-
-## 📄 License
-
-This project is developed for the Signal Processing Cup competition.
+Developed for IEEE Signal Processing Cup 2026 competition.
