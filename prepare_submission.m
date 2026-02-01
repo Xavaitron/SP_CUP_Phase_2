@@ -93,7 +93,7 @@ end
 %% ========================================================================
 function processTask(evalDir, datasetDir, taskDir, taskName, condition, fs)
     % Process evaluation outputs into submission format
-    % Creates 3 .mat files (one for each interference type) and BEST audio files
+    % Saves all 3 sample sets as audio files + 1 BEST .mat file
     
     % --- 1. Read BEST_OVERALL audio files ---
     targetSrc   = fullfile(evalDir, 'BEST_OVERALL_target.wav');
@@ -127,13 +127,37 @@ function processTask(evalDir, datasetDir, taskDir, taskName, condition, fs)
     audiowrite(fullfile(taskDir, 'interference_signal.wav'), interference_signal, fs);
     audiowrite(fullfile(taskDir, 'mixture_signal.wav'), mixture_signal, fs);
     
-    fprintf('   - Saved BEST_OVERALL audio files:\n');
-    fprintf('     * target_signal.wav\n');
-    fprintf('     * processed_signal.wav\n');
-    fprintf('     * interference_signal.wav\n');
-    fprintf('     * mixture_signal.wav\n');
+    fprintf('   - Saved BEST_OVERALL audio:\n');
+    fprintf('     * target_signal.wav, processed_signal.wav\n');
+    fprintf('     * interference_signal.wav, mixture_signal.wav\n');
     
-    % --- 3. Load RIR and spatial data from dataset generation ---
+    % --- 3. Save all 3 numbered sample sets as audio files ---
+    interfTypes = {'Female', 'Music', 'Noise'};
+    
+    for k = 1:3
+        interfType = interfTypes{k};
+        
+        % Read signals for this interference type
+        targetFile = fullfile(evalDir, sprintf('BEST_MALE__%s_target.wav', upper(interfType)));
+        interfFile = fullfile(evalDir, sprintf('BEST_MALE__%s_interference.wav', upper(interfType)));
+        mixFile    = fullfile(evalDir, sprintf('BEST_MALE__%s_mixture.wav', upper(interfType)));
+        
+        source_k = audioread(targetFile);
+        interf_k = audioread(interfFile);
+        mixture_k = audioread(mixFile);
+        
+        % Save with numbered naming: source_signal1, interference_signal1, mixture_signal1
+        audiowrite(fullfile(taskDir, sprintf('source_signal%d.wav', k)), source_k, fs);
+        audiowrite(fullfile(taskDir, sprintf('interference_signal%d.wav', k)), interf_k, fs);
+        audiowrite(fullfile(taskDir, sprintf('mixture_signal%d.wav', k)), mixture_k, fs);
+    end
+    
+    fprintf('   - Saved numbered audio samples:\n');
+    fprintf('     * source_signal1/2/3.wav (Male targets)\n');
+    fprintf('     * interference_signal1/2/3.wav (Female/Music/Noise)\n');
+    fprintf('     * mixture_signal1/2/3.wav (inputs for process_task.py)\n');
+    
+    % --- 4. Load RIR and spatial data from dataset generation ---
     sampleDirs = dir(fullfile(datasetDir, 'sample_*'));
     if isempty(sampleDirs)
         warning('No sample folders found in %s. Using fallback RIR.', datasetDir);
@@ -174,63 +198,29 @@ function processTask(evalDir, datasetDir, taskDir, taskName, condition, fs)
         end
     end
     
-    % --- 4. Create 3 .mat files (one for each interference type) ---
-    interfTypes = {'Female', 'Music', 'Noise'};
-    
-    for k = 1:3
-        interfType = interfTypes{k};
-        
-        % Read signals for this interference type
-        targetFile = fullfile(evalDir, sprintf('BEST_MALE__%s_target.wav', upper(interfType)));
-        interfFile = fullfile(evalDir, sprintf('BEST_MALE__%s_interference.wav', upper(interfType)));
-        mixFile    = fullfile(evalDir, sprintf('BEST_MALE__%s_mixture.wav', upper(interfType)));
-        outputFile = fullfile(evalDir, sprintf('BEST_MALE__%s_output.wav', upper(interfType)));
-        
-        target_signal_k = audioread(targetFile);
-        interference_signal_k = audioread(interfFile);
-        mixture_signal_k = audioread(mixFile);
-        processed_signal_k = audioread(outputFile);
-        
-        % Read metrics for this category
-        metricsFile = fullfile(evalDir, 'metrics.json');
-        if exist(metricsFile, 'file')
-            metricsText = fileread(metricsFile);
-            metricsJson = jsondecode(metricsText);
-            
-            % Get category-specific metrics
-            categoryField = sprintf('male_%s', lower(interfType));
-            if isfield(metricsJson, categoryField)
-                catMetrics = metricsJson.(categoryField);
-                metrics.OSINR = catMetrics.sisdr;
-                metrics.PESQ  = catMetrics.pesq;
-                metrics.STOI  = catMetrics.stoi;
-            else
-                metrics.OSINR = metricsJson.best_overall.sisdr;
-                metrics.PESQ  = metricsJson.best_overall.pesq;
-                metrics.STOI  = metricsJson.best_overall.stoi;
-            end
-        else
-            metrics.OSINR = 0;
-            metrics.PESQ  = 0;
-            metrics.STOI  = 0;
-        end
-        
-        % Rename for saving
-        target_signal = target_signal_k;
-        interference_signal = interference_signal_k;
-        mixture_signal = mixture_signal_k;
-        processed_signal = processed_signal_k;
-        
-        % Save .mat file for this category
-        matFileName = sprintf('%s_%s_%s_5dB.mat', taskName, condition, interfType);
-        matFilePath = fullfile(taskDir, matFileName);
-        
-        save(matFilePath, 'target_signal', 'interference_signal', 'mixture_signal', ...
-             'rir_target', 'rir_interf', 'processed_signal', 'metrics', 'params', '-v7.3');
-        
-        fprintf('   - Created: %s (OSINR=%.2f, PESQ=%.2f, STOI=%.2f)\n', ...
-                matFileName, metrics.OSINR, metrics.PESQ, metrics.STOI);
+    % --- 5. Read BEST_OVERALL metrics ---
+    metricsFile = fullfile(evalDir, 'metrics.json');
+    if exist(metricsFile, 'file')
+        metricsText = fileread(metricsFile);
+        metricsJson = jsondecode(metricsText);
+        metrics.OSINR = metricsJson.best_overall.sisdr;
+        metrics.PESQ  = metricsJson.best_overall.pesq;
+        metrics.STOI  = metricsJson.best_overall.stoi;
+    else
+        metrics.OSINR = 0;
+        metrics.PESQ  = 0;
+        metrics.STOI  = 0;
     end
+    
+    % --- 6. Save ONE .mat file (BEST_OVERALL) ---
+    matFileName = sprintf('%s_%s_5dB.mat', taskName, condition);
+    matFilePath = fullfile(taskDir, matFileName);
+    
+    save(matFilePath, 'target_signal', 'interference_signal', 'mixture_signal', ...
+         'rir_target', 'rir_interf', 'processed_signal', 'metrics', 'params', '-v7.3');
+    
+    fprintf('   - Created: %s (OSINR=%.2f, PESQ=%.2f, STOI=%.2f)\n', ...
+            matFileName, metrics.OSINR, metrics.PESQ, metrics.STOI);
 end
 
 
@@ -269,10 +259,10 @@ function createProcessTaskScript(modelInferenceDir, taskDir, filename, condition
         '\n' ...
         '# Sample mapping: 1=Male+Female, 2=Male+Music, 3=Male+Noise\n' ...
         'def get_input_path(sample_num):\n' ...
-        '    return os.path.join(SCRIPT_DIR, f"mixture{sample_num}.wav")\n' ...
+        '    return os.path.join(SCRIPT_DIR, f"mixture_signal{sample_num}.wav")\n' ...
         '\n' ...
         'def get_output_path(sample_num):\n' ...
-        '    return os.path.join(SCRIPT_DIR, f"output{sample_num}.wav")\n' ...
+        '    return os.path.join(SCRIPT_DIR, f"output_signal{sample_num}.wav")\n' ...
         '\n'], taskNum, conditionName, modelFile);
     
     % Replace the main() function to take sample number

@@ -27,10 +27,10 @@ MODEL_PATH = os.path.join(SCRIPT_DIR, "anechoic_Conformer.pth")
 
 # Sample mapping: 1=Male+Female, 2=Male+Music, 3=Male+Noise
 def get_input_path(sample_num):
-    return os.path.join(SCRIPT_DIR, f"mixture{sample_num}.wav")
+    return os.path.join(SCRIPT_DIR, f"mixture_signal{sample_num}.wav")
 
 def get_output_path(sample_num):
-    return os.path.join(SCRIPT_DIR, f"output{sample_num}.wav")
+    return os.path.join(SCRIPT_DIR, f"output_signal{sample_num}.wav")
 
 # ==========================================
 # MODEL COMPONENTS and ARCHITECTURE 
