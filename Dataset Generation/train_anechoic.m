@@ -1,12 +1,7 @@
-% This script generates anechoic training dataset samples
-% with random target and interferer angles, ensuring the target
-% is always male speech.
+clc; close all;
 
-function train_anechoic()
-    clc; close all;
-
-
-    %% 1. CONFIGURATION
+            
+%% 1. CONFIGURATION
     
     % --- Paths (Update these if needed) ---
     maleDir   = "D:\Dataset\Male";           
@@ -232,8 +227,7 @@ function train_anechoic()
             fprintf('Error in sample %d: %s\n', i, ME.message);
         end
     end
-    fprintf('Dataset Generation Complete.\n');
-end
+fprintf('Dataset Generation Complete.\n');
 
 
 %% --- HELPER FUNCTIONS ---
