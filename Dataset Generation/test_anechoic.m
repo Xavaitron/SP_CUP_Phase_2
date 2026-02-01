@@ -1,3 +1,6 @@
+% This script generates anechoic test dataset samples
+% with fixed target and interferer angles.
+
 function test_anechoic()
     clc; close all;
 

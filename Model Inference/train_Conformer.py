@@ -15,7 +15,9 @@ import math
 # ==========================================
 # 1. CONFIGURATION
 # ==========================================
-DATASET_ROOT = r"../Train_Dataset/reverb" # or ../Train_Dataset/anechoic
+# Set DATASET_ROOT = "../Train_Dataset/reverb" for reverberant training
+# or DATASET_ROOT = "../Train_Dataset/anechoic" for anechoic training
+DATASET_ROOT = r"../Train_Dataset/reverb" 
 BATCH_SIZE = 4
 LEARNING_RATE = 1e-4  
 N_EPOCHS = 50         
@@ -25,8 +27,10 @@ SILENCE_PROB = 0.2
 NUM_WORKERS = 4
 DEVICE = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
-# Resume training from checkpoint (set to None to train from scratch)
-RESUME_FROM = "reverb_Conformer.pth"  # or None or anechoic_Conformer.pth
+# Resume training from checkpoint (if any)
+# 1. RESUME_FROM = None  # Start training from scratch
+# 2. RESUME_FROM = "anechoic_Conformer.pth"  # Resume from anechoic model
+RESUME_FROM = "reverb_Conformer.pth"  # Resume from reverberant model
 
 # ==========================================
 # 2. DATASET LOADER
@@ -93,6 +97,9 @@ class RoomAcousticDataset(Dataset):
 
 # ==========================================
 # 3. COMPLEX CONVOLUTION MODULES
+# This section defines complex-valued convolution, transposed convolution,
+# and batch normalization layers, as well as a squeeze-and-excitation block.
+# These form the initial building blocks of the DCCRN architecture.
 # ==========================================
 class ComplexConv2d(nn.Module):
     def __init__(self, in_ch, out_ch, kernel_size, stride=1, padding=0):
@@ -147,6 +154,10 @@ class SqueezeExcitation(nn.Module):
 
 # ==========================================
 # 4. CONFORMER BLOCK (Conv + Attention)
+# This section defines the Conformer block components, including
+# positional encoding, convolution module, multi-head self-attention,
+# feed-forward network, and the overall Conformer block structure.
+# This forms the USP for our DCCRN-Conformer model.
 # ==========================================
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model, max_len=5000):
@@ -206,7 +217,7 @@ class MultiHeadSelfAttention(nn.Module):
         self.dropout = nn.Dropout(dropout)
         
     def forward(self, x):
-        # x: [B, T, C]
+        #  Dimension of x: [B, T, C]
         B, T, C = x.shape
         residual = x
         x = self.layer_norm(x)
@@ -215,7 +226,7 @@ class MultiHeadSelfAttention(nn.Module):
         qkv = qkv.permute(2, 0, 3, 1, 4)  # [3, B, H, T, D]
         q, k, v = qkv[0], qkv[1], qkv[2]
         
-        # Scaled dot-product attention
+        # We use scaled dot-product attention
         attn = (q @ k.transpose(-2, -1)) / math.sqrt(self.head_dim)
         attn = F.softmax(attn, dim=-1)
         attn = self.dropout(attn)
@@ -293,7 +304,7 @@ class DualPathConformer(nn.Module):
         self.pos_enc = PositionalEncoding(input_size)
         
     def forward(self, x):
-        # x: [B, C, F, T]
+        # Dimension of x: [B, C, F, T]
         B, C, F, T = x.shape
         
         # Frequency path
@@ -315,7 +326,10 @@ class DualPathConformer(nn.Module):
 
 # ==========================================
 # 5. DCCRN-CONFORMER MODEL
+# This section defines the DCCRN model architecture
+# with a Conformer bottleneck for enhanced attention.
 # ==========================================
+
 class DCCRNConformer(nn.Module):
     """DCCRN with Conformer bottleneck for enhanced attention."""
     def __init__(self, n_fft=512, hop_length=128):
@@ -455,6 +469,10 @@ class DCCRNConformer(nn.Module):
 
 # ==========================================
 # 6. SI-SDR + PERCEPTUAL + PHASE LOSS (AGGRESSIVE PESQ)
+# We define a composite loss function that combines SI-SDR,
+# multi-resolution STFT loss, mel-spectrogram loss, and phase-aware loss.
+# This comprehensive loss function is designed to enhance both objective
+# and perceptual quality of the enhanced speech.
 # ==========================================
 class SISdrPerceptualLoss(nn.Module):
     def __init__(self, n_fft=512, hop_length=128, alpha_sisdr=10.0, alpha_spectral=1.0, alpha_mel=8.0, alpha_phase=1.0):
@@ -576,7 +594,7 @@ def main():
     print(f"Model parameters: {num_params:,} ({num_params/1e6:.2f}M)")
     assert num_params < 15_000_000, f"Model exceeds 15M params: {num_params:,}"
     
-    # Load checkpoint if resuming
+    # Load checkpoint if resuming i.e. RESUME_FROM is not None
     if RESUME_FROM is not None:
         try:
             state_dict = torch.load(RESUME_FROM, map_location=DEVICE, weights_only=True)
@@ -632,7 +650,7 @@ def main():
         
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
-            torch.save(model.state_dict(), "reverb_Conformer.pth") # or anechoic_Conformer.pth
+            torch.save(model.state_dict(), "reverb_Conformer.pth") # or anechoic_Conformer.pth for anechoic
             print(">>> New Best Model Saved!")
             
     print("Training Complete.")

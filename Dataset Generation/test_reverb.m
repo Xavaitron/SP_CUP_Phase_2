@@ -1,3 +1,6 @@
+% This script generates reverberant test dataset samples
+% with fixed target and interferer angles.
+
 function test_reverb()
     clc; close all;
 

@@ -17,9 +17,9 @@ import soundfile as sf
 # ==========================================
 # 1. CONFIGURATION
 # ==========================================
-MODEL_PATH = "anechoic_Conformer.pth"       
-TEST_DATASET_ROOT = r"../Test_Dataset/anechoic"
-OUTPUT_DIR = "evaluation_anechoic"   # or evaluations_anechoic 
+MODEL_PATH = "anechoic_Conformer.pth"     # or reverberant_Conformer.pth for reverberant   
+TEST_DATASET_ROOT = r"../Test_Dataset/anechoic" # or ../Test_Dataset/reverberant for reverberant
+OUTPUT_DIR = "evaluation_anechoic"   # or evaluations_reverb for reverberant
 SAMPLE_RATE = 16000
 N_FFT = 512
 HOP_LENGTH = 128
@@ -245,7 +245,7 @@ class DCCRNConformer(nn.Module):
         self.enc4 = ComplexConv2d(192, 256, (3, 3), stride=(2, 1), padding=(1, 1))
         self.bn4 = ComplexBatchNorm2d(256)
         
-        # Angle conditioning
+        # Angle conditioning network
         self.angle_net = nn.Sequential(
             nn.Linear(2, 128),
             nn.ReLU(),
@@ -257,7 +257,7 @@ class DCCRNConformer(nn.Module):
         # Dual-path Conformer bottleneck
         self.conformer = DualPathConformer(256, num_blocks=3, num_heads=4, dropout=0.1)
         
-        # Decoder
+        # Decoder blocks: 512 -> 384 -> 192 -> 96 -> 2
         self.dec4 = ComplexConvTranspose2d(512, 192, (3, 3), stride=(2, 1), padding=(1, 1))
         self.dbn4 = ComplexBatchNorm2d(192)
         
@@ -281,7 +281,7 @@ class DCCRNConformer(nn.Module):
         x_real = stft.real
         x_imag = stft.imag
         
-        # Encoder
+        # Encoder blocks
         e1_r, e1_i = self.enc1(x_real, x_imag)
         e1_r, e1_i = self.bn1(F.leaky_relu(e1_r, 0.2), F.leaky_relu(e1_i, 0.2))
         e1_r = self.se1(e1_r)
@@ -297,7 +297,7 @@ class DCCRNConformer(nn.Module):
         e4_r, e4_i = self.enc4(e3_r, e3_i)
         e4_r, e4_i = self.bn4(F.leaky_relu(e4_r, 0.2), F.leaky_relu(e4_i, 0.2))
         
-        # Angle injection
+        # Angle injection at bottleneck
         rad = torch.deg2rad(angle)
         angle_vec = torch.cat([torch.sin(rad), torch.cos(rad)], dim=1)
         angle_emb = self.angle_net(angle_vec).unsqueeze(-1).unsqueeze(-1)
@@ -305,14 +305,14 @@ class DCCRNConformer(nn.Module):
         e4_r = e4_r + angle_emb
         e4_i = e4_i + angle_emb
         
-        # Conformer bottleneck
+        # Conformer bottleneck is applied on magnitude
         combined = torch.sqrt(e4_r**2 + e4_i**2 + 1e-8)
         combined = self.conformer(combined)
         
         e4_r = e4_r * combined
         e4_i = e4_i * combined
         
-        # Decoder
+        # Decoder blocks with skip connections
         d4_r, d4_i = self.dec4(torch.cat([e4_r, e4_r], dim=1), torch.cat([e4_i, e4_i], dim=1))
         d4_r, d4_i = self._match_and_add(d4_r, d4_i, e3_r, e3_i)
         d4_r, d4_i = self.dbn4(F.leaky_relu(d4_r, 0.2), F.leaky_relu(d4_i, 0.2))
@@ -362,7 +362,7 @@ class DCCRNConformer(nn.Module):
 # 5. UTILITY FUNCTIONS
 # ==========================================
 def load_audio(path, target_len=None):
-    # Use soundfile backend to avoid torchcodec dependency in torchaudio 2.10+
+    # Using soundfile backend to avoid torchcodec dependency in torchaudio 2.10+ as it may not be available
     waveform, sr = torchaudio.load(path, backend="soundfile")
     if sr != SAMPLE_RATE:
         resampler = torchaudio.transforms.Resample(sr, SAMPLE_RATE)
@@ -387,7 +387,7 @@ def count_parameters(model):
 def run_evaluation():
     print(f"--- Running Conformer Evaluation on {DEVICE} ---")
     
-    # 1. Load Model
+    # 1. Loading the Model
     model = DCCRNConformer(n_fft=N_FFT, hop_length=HOP_LENGTH).to(DEVICE)
     try:
         state_dict = torch.load(MODEL_PATH, map_location=DEVICE, weights_only=True)
@@ -467,7 +467,7 @@ def run_evaluation():
             print(f"Error processing {sample_name}: {e}")
             continue
 
-    # 5. Report Final Results
+    # 5. Reporting the Final Results
     avg_sisdr = np.mean(results['sisdr'])
     avg_stoi = np.mean(results['stoi'])
     avg_pesq = np.mean(results['pesq'])
@@ -512,7 +512,7 @@ def run_evaluation():
         if not indices:
             return None
         
-        # Calculate combined score for this subset
+        # Calculating the combined score for this subset
         subset_scores = combined_score[indices]
         best_subset_idx = indices[np.argmax(subset_scores)]
         return best_subset_idx
@@ -526,7 +526,7 @@ def run_evaluation():
     print(f"STOI:            {best_stoi:.4f}")
     print(f"PESQ:            {best_pesq:.4f}")
 
-    # Category-based best samples
+    # Category-based best samples reporting
     categories = [
         ("BEST MALE + NOISE", "Male", "Noise"),
         ("BEST MALE + MUSIC", "Male", "Music"),
@@ -560,13 +560,12 @@ def run_evaluation():
     print(f"Real-time Factor: {(3.0 * 1000) / avg_inference_time:.2f}x (for 3s audio)")
     print("-" * 40)
     
-    # Helper function to save best sample for a given index and prefix
+    # Helper function to save best sample for a given index and prefix 
     def save_best_sample(idx, prefix):
         """Save the best sample audio files for a given index."""
         folder = sample_folders[idx]
         mix_path = os.path.join(folder, "mixture.wav")
         target_path = os.path.join(folder, "target.wav")
-        # FIXED: Changed from "interferer.wav" to "interference.wav" to match MATLAB script
         interf_path = os.path.join(folder, "interference.wav") 
         meta_path = os.path.join(folder, "meta.json")
         
@@ -593,23 +592,23 @@ def run_evaluation():
                 torchaudio.save(os.path.join(OUTPUT_DIR, f"{prefix}_mixture.wav"), mixture.squeeze(0).cpu(), SAMPLE_RATE, backend="soundfile")
                 torchaudio.save(os.path.join(OUTPUT_DIR, f"{prefix}_target.wav"), tgt_trim.cpu(), SAMPLE_RATE, backend="soundfile")
                 
-                # Save interference file if it exists
+                # Saving the interference if it exists
                 if os.path.exists(interf_path):
                     interf = load_audio(interf_path)
                     if interf.shape[0] > 1: interf = interf[0:1, :]
                     interf_trim = interf[..., :min_len]
-                    # Saving as "{prefix}_interference.wav" for clarity
+                    # Saving as "{prefix}_interference.wav" file
                     torchaudio.save(os.path.join(OUTPUT_DIR, f"{prefix}_interference.wav"), interf_trim.cpu(), SAMPLE_RATE, backend="soundfile")
                 
                 print(f"Saved {prefix} audio files to {OUTPUT_DIR}")
         except Exception as e:
             print(f"Error saving {prefix}: {e}")
 
-    # Save Best Overall Case
+    # Saving the best overall case
     print(f"\nSaving Best Overall Case: {best_sample_name}...")
     save_best_sample(best_idx, "BEST_OVERALL")
 
-    # Save Best Category Cases
+    # Saving the best category cases
     category_results = {}
     for cat_name, src_filter, interf_filter in categories:
         cat_idx = find_best_in_category(src_filter, interf_filter)
@@ -625,7 +624,7 @@ def run_evaluation():
                 "pesq": float(pesq_arr[cat_idx])
             }
 
-    # Save metrics to JSON
+    # Saving metrics to JSON
     metrics_report = {
         "total_samples": len(results['sisdr']),
         "best_overall": {
