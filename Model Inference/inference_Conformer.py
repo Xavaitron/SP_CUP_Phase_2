@@ -1,6 +1,8 @@
 """
 Conformer Inference Script
-Usage: python inference_Conformer.py --input mixture.wav --angle 45 --output output.wav
+To run inference using the DCCRN-Conformer model on a stereo audio file
+with a specified target angle and save the enhanced output.
+Run command: python inference_Conformer.py --input <input_wav> --angle <target_angle> --output <output_wav>
 """
 import argparse
 import torch
@@ -10,7 +12,7 @@ import torchaudio
 import math
 
 # ==========================================
-# MODEL COMPONENTS
+# MODEL COMPONENTS and ARCHITECTURE 
 # ==========================================
 class ComplexConv2d(nn.Module):
     def __init__(self, in_ch, out_ch, kernel_size, stride=1, padding=0):
@@ -329,7 +331,7 @@ class DCCRNConformer(nn.Module):
 
 
 # ==========================================
-# INFERENCE - FIXED LENGTH
+# INFERENCE - FINAL SCRIPT
 # ==========================================
 SAMPLE_RATE = 16000
 FIXED_DURATION = 3.0  # seconds - model's expected input size
@@ -360,7 +362,7 @@ def main():
     device = torch.device(args.device)
     print(f"Device: {device}")
     
-    # Load model
+    # Load model with weights_only=True
     model = DCCRNConformer(n_fft=512, hop_length=128).to(device)
     try:
         state_dict = torch.load(args.model, map_location=device, weights_only=True)
@@ -371,13 +373,13 @@ def main():
         return
     model.eval()
     
-    # Load audio
+    # Load audio input
     print(f"Loading: {args.input}")
     waveform = load_audio(args.input)
     original_len = waveform.shape[-1]
     print(f"Input duration: {original_len / SAMPLE_RATE:.2f}s")
     
-    # Cut or pad to fixed size (3 seconds)
+    # Cut or pad to fixed size (3 seconds) if necessary
     if original_len > FIXED_SAMPLES:
         waveform = waveform[:, :FIXED_SAMPLES]
         print(f"Trimmed to: {FIXED_DURATION}s")
@@ -390,10 +392,10 @@ def main():
     
     waveform = waveform.unsqueeze(0).to(device)  # [1, 2, T]
     
-    # Create angle tensor
+    # Create angle tensor for batch size 1
     angle_tensor = torch.tensor([[args.angle]], dtype=torch.float32).to(device)
     
-    # Inference
+    # Inference step
     print(f"Processing with target angle: {args.angle}°")
     with torch.no_grad():
         output = model(waveform, angle_tensor)
@@ -402,7 +404,7 @@ def main():
     output_len = min(original_len, FIXED_SAMPLES)
     output = output[:, :output_len]
     
-    # Match output power to input power
+    # Match output power to input power very important for consistent loudness
     output_rms = torch.sqrt(torch.mean(output.cpu() ** 2))
     if output_rms > 1e-8:
         scale = input_rms / output_rms

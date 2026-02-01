@@ -1,3 +1,7 @@
+% This script generates reverberant training dataset samples
+% with random target and interferer angles, ensuring the target
+% is always male speech.
+
 function train_reverb()
     clc; close all;
 
@@ -58,7 +62,8 @@ function train_reverb()
 
 
     %% 3. SAFE PARALLEL POOL SETUP
-    % Limit workers to 4 to prevent freezing. Increase only if you have >32GB RAM.
+    % Limit workers to 4 to prevent freezing. Increase this only if you have >32GB RAM on your machine.
+
     SAFE_WORKERS = 4; 
     poolObj = gcp('nocreate');
     if isempty(poolObj)
@@ -85,7 +90,7 @@ function train_reverb()
         tempCache{i_cache} = rir_generator(c, fs, micPositions, pos, roomDimensions, beta, n_rir);
     end
     
-    % --- CRITICAL FIX: Store massive RIR cache in Constant ---
+    % --- Store massive RIR cache in Constant ---
     cRirCache = parallel.pool.Constant(tempCache);
     clear tempCache; % Clear from main RAM immediately
     fprintf('   - Cache built and optimized.\n');
@@ -174,7 +179,7 @@ function train_reverb()
             micT = fftfilt(rirT', targetSignal);
             micI = fftfilt(rirI', interfererSignal);
             
-            % Truncate to match length
+            % Truncate to match length of signals
             len = min(size(micT, 1), size(micI, 1));
             micT = micT(1:len, :);
             micI = micI(1:len, :);
@@ -183,18 +188,18 @@ function train_reverb()
             powT = mean(micT(:,1).^2) + 1e-12;
             powI = mean(micI(:,1).^2) + 1e-12;
             
-            % Adjust Interferer to satisfy SIR = 0dB
+            % Adjusting the Interferer to satisfy the constraint of SIR = 0dB
             scale = sqrt(powT / powI) / (10^(sir_dB/20));
             micI = micI * scale;
             
             cleanMix = micT + micI;
             
-            % Add White Noise (SNR = 5dB)
+            % Adding White Noise under the constraint of SNR = 5dB
             powMix = mean(cleanMix(:).^2);
             noise = sqrt(powMix / (10^(snr_dB/10))) * randn(size(cleanMix));
             finalMix = cleanMix + noise;
             
-            % --- E. Saving ---
+            % --- E. Saving the Audio Files ---
             fName = sprintf('sample_%05d', i);
             subFolder = fullfile(outputDatasetDir, fName);
             if ~exist(subFolder, 'dir'), mkdir(subFolder); end
@@ -209,7 +214,7 @@ function train_reverb()
             % --- SAVING INTERFERENCE (ADDED) ---
             audiowrite(fullfile(subFolder, 'interference.wav'), micI, fs);
             
-            % --- F. Metadata ---
+            % --- F. Generating the Metadata ---
             meta = struct(); 
             meta.target_angle = targetAngle_deg;
             meta.interf_angle = interfererAngle_deg;
@@ -232,7 +237,7 @@ function train_reverb()
 end
 
 
-%% --- HELPER FUNCTIONS ---
+%% --- HELPER FUNCTIONS Required in the script ---
 
 
 function updateProgress(~, total)

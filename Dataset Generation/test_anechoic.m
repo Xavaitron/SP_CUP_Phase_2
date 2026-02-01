@@ -1,4 +1,12 @@
+<<<<<<< HEAD
 clc; close all;
+=======
+% This script generates anechoic test dataset samples
+% with fixed target and interferer angles.
+
+function test_anechoic()
+    clc; close all;
+>>>>>>> e62b192dec199bd0d9321f4d947545b014460c18
 
 %% 1. CONFIGURATION
 maleDir   = "D:\Dataset\Male";           
