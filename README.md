@@ -63,6 +63,25 @@ pip install -r requirements.txt
 - Parallel Computing Toolbox
 - `rir_generator` MEX function
 
+### RIR Generator Setup
+
+The `rir_generator` MEX function needs to be compiled before running dataset generation:
+
+```matlab
+% 1. Navigate to RIR_gen folder
+cd RIR_gen
+
+% 2. Configure MEX compiler for C++
+mex -setup
+
+% Select a C++ compiler (MinGW-w64, MSVC, etc. must be installed)
+
+% 3. Compile the RIR generator
+mex rir_generator.cpp rir_generator_core.cpp
+```
+
+> **Note:** On Windows, install [MinGW-w64](https://www.mingw-w64.org/) or Visual Studio with C++ build tools. On Linux/macOS, ensure `g++` or `clang++` is available.
+
 ---
 
 ## 🚀 Pipeline
