@@ -1,24 +1,38 @@
 """
-Process Task 1 - Anechoic Source Separation
-Audio-Visual Zooming using DCCRN-Conformer
-
-Usage:
-    python process_task1.py --input mixture.wav --angle 90 --output processed_signal.wav
-
-Or as a module:
-    from process_task1 import process_audio
-    output = process_audio("mixture.wav", 90, "output.wav")
+Conformer Inference Script
+To run inference using the DCCRN-Conformer model on a stereo audio file
+with a specified target angle and save the enhanced output.
+Usage: python process_task1.py --sample <1/2/3> [--angle <degrees>] [--device <cpu/cuda>]
 """
 import argparse
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio
-import math
-import os
+import math\nimport os
+
 
 # ==========================================
-# MODEL COMPONENTS (DCCRN-Conformer)
+# CONFIGURATION (Task 1 - Anechoic)
+# ==========================================
+SAMPLE_RATE = 16000
+FIXED_DURATION = 3.0  # seconds
+FIXED_SAMPLES = int(SAMPLE_RATE * FIXED_DURATION)
+TARGET_ANGLE = 90  # degrees
+
+# Script directory and paths
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(SCRIPT_DIR, "anechoic_Conformer.pth")
+
+# Sample mapping: 1=Female, 2=Music, 3=Noise
+def get_input_path(sample_num):
+    return os.path.join(SCRIPT_DIR, f"mixture_signal{sample_num}.wav")
+
+def get_output_path(sample_num):
+    return os.path.join(SCRIPT_DIR, f"output_signal{sample_num}.wav")
+
+# ==========================================
+# MODEL COMPONENTS and ARCHITECTURE 
 # ==========================================
 class ComplexConv2d(nn.Module):
     def __init__(self, in_ch, out_ch, kernel_size, stride=1, padding=0):
@@ -337,23 +351,16 @@ class DCCRNConformer(nn.Module):
 
 
 # ==========================================
-# INFERENCE PARAMETERS
+# INFERENCE - FINAL SCRIPT
 # ==========================================
-SAMPLE_RATE = 16000
-FIXED_DURATION = 3.0
-FIXED_SAMPLES = int(SAMPLE_RATE * FIXED_DURATION)
-
-# Model path - local to this script's directory
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(SCRIPT_DIR, "anechoic_Conformer.pth")
 
 
 def load_audio(path, sample_rate=16000):
-    """Load audio file and convert to stereo at target sample rate."""
     waveform, sr = torchaudio.load(path)
     if sr != sample_rate:
         resampler = torchaudio.transforms.Resample(sr, sample_rate)
         waveform = resampler(waveform)
+    # Ensure stereo (2 channels)
     if waveform.shape[0] == 1:
         waveform = waveform.repeat(2, 1)
     elif waveform.shape[0] > 2:
@@ -361,38 +368,45 @@ def load_audio(path, sample_rate=16000):
     return waveform
 
 
-def process_audio(input_path, target_angle, output_path, model_path=None, device='cpu'):
-    """
-    Process audio using DCCRN-Conformer model.
+def main():
+    parser = argparse.ArgumentParser(description="Task 1 - Anechoic Source Separation")
+    parser.add_argument("--sample", "-s", type=int, required=True, choices=[1, 2, 3],
+                        help="Sample number (1=Female, 2=Music, 3=Noise)")
+    parser.add_argument("--angle", "-a", type=float, default=TARGET_ANGLE,
+                        help="Target angle (0-180 degrees)")
+    parser.add_argument("--device", "-d", type=str, default="cpu",
+                        help="Device (cpu or cuda)")
+    args = parser.parse_args()
     
-    Args:
-        input_path: Path to input stereo audio file
-        target_angle: Target source angle (0-180 degrees)
-        output_path: Path to save output audio
-        model_path: Path to model checkpoint (default: anechoic_Conformer.pth)
-        device: 'cpu' or 'cuda'
+    # Get paths from global config
+    input_file = get_input_path(args.sample)
+    output_file = get_output_path(args.sample)
     
-    Returns:
-        output_path if successful, None otherwise
-    """
-    if model_path is None:
-        model_path = MODEL_PATH
-    
-    device = torch.device(device)
+    device = torch.device(args.device)
+    print(f"Task 1 - Anechoic Source Separation")
+    print(f"Sample: {args.sample}")
+    print(f"Input: {input_file}")
+    print(f"Output: {output_file}")
+    print(f"Target angle: {args.angle} degrees")
+    print(f"Model: {MODEL_PATH}")
+    print(f"Device: {device}")
     
     # Load model
     model = DCCRNConformer(n_fft=512, hop_length=128).to(device)
     try:
-        state_dict = torch.load(model_path, map_location=device, weights_only=True)
+        state_dict = torch.load(MODEL_PATH, map_location=device, weights_only=True)
         model.load_state_dict(state_dict)
+        print("Model loaded successfully")
     except FileNotFoundError:
-        print(f"Error: Model file '{model_path}' not found!")
-        return None
+        print("Error: Model file not found!")
+        return
     model.eval()
     
     # Load audio
-    waveform = load_audio(input_path)
+    print("Loading audio...")
+    waveform = load_audio(input_file)
     original_len = waveform.shape[-1]
+    print(f"Input duration: {original_len / SAMPLE_RATE:.2f}s")
     
     # Pad/trim to fixed size
     if original_len > FIXED_SAMPLES:
@@ -400,53 +414,30 @@ def process_audio(input_path, target_angle, output_path, model_path=None, device
     elif original_len < FIXED_SAMPLES:
         waveform = F.pad(waveform, (0, FIXED_SAMPLES - original_len))
     
-    # Track input power for matching
     input_rms = torch.sqrt(torch.mean(waveform ** 2))
-    
     waveform = waveform.unsqueeze(0).to(device)
-    angle_tensor = torch.tensor([[target_angle]], dtype=torch.float32).to(device)
+    angle_tensor = torch.tensor([[args.angle]], dtype=torch.float32).to(device)
     
     # Inference
+    print("Processing...")
     with torch.no_grad():
         output = model(waveform, angle_tensor)
     
-    # Trim to original length
     output_len = min(original_len, FIXED_SAMPLES)
     output = output[:, :output_len]
     
-    # Match output power to input
+    # Match power
     output_rms = torch.sqrt(torch.mean(output.cpu() ** 2))
     if output_rms > 1e-8:
-        scale = input_rms / output_rms
-        output = output.cpu() * scale
+        output = output.cpu() * (input_rms / output_rms)
     else:
         output = output.cpu()
     
-    torchaudio.save(output_path, output, SAMPLE_RATE)
-    return output_path
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Task 1 - Anechoic Source Separation")
-    parser.add_argument("--input", "-i", type=str, required=True, help="Input stereo audio file")
-    parser.add_argument("--angle", "-a", type=float, default=90, help="Target angle (0-180 degrees)")
-    parser.add_argument("--output", "-o", type=str, default="processed_signal.wav", help="Output audio file")
-    parser.add_argument("--model", "-m", type=str, default=None, help="Model checkpoint path")
-    parser.add_argument("--device", "-d", type=str, default="cpu", help="Device (cpu or cuda)")
-    args = parser.parse_args()
-    
-    print(f"Task 1 - Anechoic Source Separation")
-    print(f"Input: {args.input}")
-    print(f"Target angle: {args.angle}°")
-    print(f"Device: {args.device}")
-    
-    result = process_audio(args.input, args.angle, args.output, args.model, args.device)
-    
-    if result:
-        print(f"Output saved: {args.output}")
-    else:
-        print("Processing failed!")
-
+    torchaudio.save(output_file, output, SAMPLE_RATE)
+    print(f"Saved: {output_file}")
+    print(f"Output duration: {output.shape[-1] / SAMPLE_RATE:.2f}s")
+    print("Processing complete!")
 
 if __name__ == "__main__":
     main()
+

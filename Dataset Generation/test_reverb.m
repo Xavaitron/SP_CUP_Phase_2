@@ -7,7 +7,7 @@ noiseDir  = "C:\Users\ironp\Downloads\SP Cup\matlab_stuff\MUSAN\noise";
 musicDir  = "C:\Users\ironp\Downloads\SP Cup\matlab_stuff\MUSAN\music";    
 
 % Output folder
-outputDatasetDir = 'D:/Train_Dataset/reverb';
+outputDatasetDir = '../Train_Dataset/reverb';
 
 % --- Generation Settings ---
 numSamplesToGenerate = 150000;

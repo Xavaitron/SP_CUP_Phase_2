@@ -7,7 +7,7 @@ noiseDir  = "C:\Users\ironp\Downloads\SP Cup\matlab_stuff\MUSAN\noise";
 musicDir  = "C:\Users\ironp\Downloads\SP Cup\matlab_stuff\MUSAN\music";    
 
 % Output folder
-outputDatasetDir = 'D:/Train_Dataset/anechoic';
+outputDatasetDir = '../Train_Dataset/anechoic';
 
 % --- Generation Settings ---
 numSamplesToGenerate = 150000;
