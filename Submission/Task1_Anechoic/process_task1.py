@@ -9,7 +9,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio
-import math\nimport os
+import math
+import os
 
 
 # ==========================================
@@ -24,12 +25,12 @@ TARGET_ANGLE = 90  # degrees
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(SCRIPT_DIR, "anechoic_Conformer.pth")
 
-# Sample mapping: 1=Female, 2=Music, 3=Noise
+# Sample mapping: 1=Male+Female, 2=Male+Music, 3=Male+Noise
 def get_input_path(sample_num):
-    return os.path.join(SCRIPT_DIR, f"mixture_signal{sample_num}.wav")
+    return os.path.join(SCRIPT_DIR, f"mixture{sample_num}.wav")
 
 def get_output_path(sample_num):
-    return os.path.join(SCRIPT_DIR, f"output_signal{sample_num}.wav")
+    return os.path.join(SCRIPT_DIR, f"output{sample_num}.wav")
 
 # ==========================================
 # MODEL COMPONENTS and ARCHITECTURE 
