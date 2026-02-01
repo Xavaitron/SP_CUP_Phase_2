@@ -1,3 +1,7 @@
+% This script generates anechoic training dataset samples
+% with random target and interferer angles, ensuring the target
+% is always male speech.
+
 function train_anechoic()
     clc; close all;
 
@@ -19,8 +23,8 @@ function train_anechoic()
     
     % --- Acoustic Settings ---
     sir_dB            = 0;     % Signal-to-Interference Ratio
-    snr_dB            = 5;     % Signal-to-Noise Ratio (sensor noise)
-    min_angle_sep_deg = 15;    % Min separation between sources
+    snr_dB            = 5;     % Signal-to-Noise Ratio is set to 5dB as defined in the problem statement
+    min_angle_sep_deg = 15;    % Min separation between sources in degrees
     source_radius_m   = 1.0;
     roomDimensions    = [4.9, 4.9, 4.9];
     
