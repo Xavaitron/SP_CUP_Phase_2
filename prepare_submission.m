@@ -121,19 +121,44 @@ function processTask(evalDir, datasetDir, taskDir, taskName, condition, fs)
     
     fprintf('   - Read BEST_OVERALL files from: %s\n', evalDir);
     
-    % --- 2. Save BEST_OVERALL audio files (standard naming) ---
-    audiowrite(fullfile(taskDir, 'target_signal.wav'), target_signal, fs);
-    audiowrite(fullfile(taskDir, 'processed_signal.wav'), processed_signal, fs);
-    audiowrite(fullfile(taskDir, 'interference_signal.wav'), interference_signal, fs);
-    audiowrite(fullfile(taskDir, 'mixture_signal.wav'), mixture_signal, fs);
-    
-    fprintf('   - Saved BEST_OVERALL audio:\n');
-    fprintf('     * target_signal.wav, processed_signal.wav\n');
-    fprintf('     * interference_signal.wav, mixture_signal.wav\n');
-    
     % --- 3. Save all 3 numbered sample sets as audio files ---
     interfTypes = {'Female', 'Music', 'Noise'};
     
+    % --- 4. Load RIR and spatial data first ---
+    rirDataFile = './rir_data.mat';
+    
+    if exist(rirDataFile, 'file')
+        rirData = load(rirDataFile);
+        if strcmp(condition, 'Anechoic')
+            condData = rirData.anechoic;
+        else
+            condData = rirData.reverb;
+        end
+        rir_data = struct();
+        rir_data.rir_target = condData.rir_target;
+        rir_data.rir_interf = condData.rir_interf;
+        params = condData.params;
+        fprintf('   - Loaded RIRs from: %s (%s)\n', rirDataFile, condition);
+    else
+        [rir_target, rir_interf, params] = generateFallbackRIR(condition, fs);
+        rir_data = struct();
+        rir_data.rir_target = rir_target;
+        rir_data.rir_interf = rir_interf;
+    end
+    
+    % --- 5. Load metrics from JSON ---
+    metricsFile = fullfile(evalDir, 'metrics.json');
+    if exist(metricsFile, 'file')
+        metricsText = fileread(metricsFile);
+        metricsJson = jsondecode(metricsText);
+    else
+        metricsJson = struct();
+    end
+    
+    % Map interference type to category key
+    categoryKeys = {'BEST MALE + FEMALE', 'BEST MALE + MUSIC', 'BEST MALE + NOISE'};
+    
+    % --- 6. Create .mat file for each sample ---
     for k = 1:3
         interfType = interfTypes{k};
         
@@ -141,86 +166,65 @@ function processTask(evalDir, datasetDir, taskDir, taskName, condition, fs)
         targetFile = fullfile(evalDir, sprintf('BEST_MALE__%s_target.wav', upper(interfType)));
         interfFile = fullfile(evalDir, sprintf('BEST_MALE__%s_interference.wav', upper(interfType)));
         mixFile    = fullfile(evalDir, sprintf('BEST_MALE__%s_mixture.wav', upper(interfType)));
+        outputFile = fullfile(evalDir, sprintf('BEST_MALE__%s_output.wav', upper(interfType)));
         
-        source_k = audioread(targetFile);
-        interf_k = audioread(interfFile);
-        mixture_k = audioread(mixFile);
+        target_signal = audioread(targetFile);
+        interference_signal = audioread(interfFile);
+        mixture_signal = audioread(mixFile);
+        processed_signal = audioread(outputFile);
         
-        % Save with numbered naming: source_signal1, interference_signal1, mixture_signal1
-        audiowrite(fullfile(taskDir, sprintf('source_signal%d.wav', k)), source_k, fs);
-        audiowrite(fullfile(taskDir, sprintf('interference_signal%d.wav', k)), interf_k, fs);
-        audiowrite(fullfile(taskDir, sprintf('mixture_signal%d.wav', k)), mixture_k, fs);
+        % Save audio files
+        audiowrite(fullfile(taskDir, sprintf('source_signal%d.wav', k)), target_signal, fs);
+        audiowrite(fullfile(taskDir, sprintf('interference_signal%d.wav', k)), interference_signal, fs);
+        audiowrite(fullfile(taskDir, sprintf('mixture_signal%d.wav', k)), mixture_signal, fs);
+        
+        % Read actual metrics from JSON
+        catKey = categoryKeys{k};
+        % Handle field name with spaces - replace with underscores for struct access
+        catFieldName = strrep(strrep(catKey, ' ', '_'), '+', '_');
+        catFieldName = strrep(catFieldName, '__', '_');  % Clean double underscores
+        
+        if isfield(metricsJson, 'categories')
+            cats = metricsJson.categories;
+            % Try different field name patterns
+            if isfield(cats, catFieldName)
+                catData = cats.(catFieldName);
+            elseif isfield(cats, ['BEST_MALE___' upper(interfType)])
+                catData = cats.(['BEST_MALE___' upper(interfType)]);
+            else
+                % Fallback: iterate through fields to find match
+                catData = struct('sisdr', 0, 'pesq', 0, 'stoi', 0);
+                catFields = fieldnames(cats);
+                for cf = 1:length(catFields)
+                    if contains(catFields{cf}, upper(interfType))
+                        catData = cats.(catFields{cf});
+                        break;
+                    end
+                end
+            end
+            metrics.SISDR = catData.sisdr;
+            metrics.PESQ = catData.pesq;
+            metrics.STOI = catData.stoi;
+        else
+            metrics.SISDR = 0;
+            metrics.PESQ = 0;
+            metrics.STOI = 0;
+        end
+        
+        % Save individual .mat file for this sample
+        matFileName = sprintf('%s_%s_5dB_sample%d.mat', taskName, condition, k);
+        matFilePath = fullfile(taskDir, matFileName);
+        
+        save(matFilePath, 'target_signal', 'interference_signal', 'mixture_signal', ...
+             'rir_data', 'processed_signal', 'metrics', 'params', '-v7.3');
+        
+        fprintf('   - Created: %s (%s, SISDR=%.2f)\n', matFileName, interfType, metrics.SISDR);
     end
     
     fprintf('   - Saved numbered audio samples:\n');
     fprintf('     * source_signal1/2/3.wav (Male targets)\n');
     fprintf('     * interference_signal1/2/3.wav (Female/Music/Noise)\n');
     fprintf('     * mixture_signal1/2/3.wav (inputs for process_task.py)\n');
-    
-    % --- 4. Load RIR and spatial data from dataset generation ---
-    sampleDirs = dir(fullfile(datasetDir, 'sample_*'));
-    if isempty(sampleDirs)
-        warning('No sample folders found in %s. Using fallback RIR.', datasetDir);
-        % Fallback: generate placeholder RIRs
-        if strcmp(condition, 'Anechoic')
-            rir_target = [1, zeros(1, 4095); 1, zeros(1, 4095)];
-            rir_interf = [1, zeros(1, 4095); 1, zeros(1, 4095)];
-            rt60 = 0.0;
-        else
-            rt60 = 0.5;
-            t = (0:4095) / fs;
-            decay = exp(-3 * t / rt60);
-            rir_target = [randn(1, 4096) .* decay; randn(1, 4096) .* decay];
-            rir_target = rir_target / max(abs(rir_target(:)));
-            rir_interf = [randn(1, 4096) .* decay; randn(1, 4096) .* decay];
-            rir_interf = rir_interf / max(abs(rir_interf(:)));
-        end
-        params.sampling_rate = fs;
-        params.mic_positions = [2.41, 2.45, 1.5; 2.49, 2.45, 1.5];
-        params.array_spacing = 0.08;
-        params.source_azimuth = 90;
-        params.interferer_azimuth = 40;
-        params.source_height = 1.5;
-        params.SNR_dB = 5;
-        params.SIR_dB = 0;
-        params.RT60 = rt60;
-        params.room_dimensions = [4.9, 4.9, 4.9];
-    else
-        spatialDataPath = fullfile(datasetDir, sampleDirs(1).name, 'spatial_data.mat');
-        if exist(spatialDataPath, 'file')
-            spatialData = load(spatialDataPath);
-            rir_target = spatialData.rir_target;
-            rir_interf = spatialData.rir_interf;
-            params = spatialData.params;
-            fprintf('   - Loaded RIRs from: %s\n', spatialDataPath);
-        else
-            error('spatial_data.mat not found in %s.', sampleDirs(1).name);
-        end
-    end
-    
-    % --- 5. Read BEST_OVERALL metrics ---
-    metricsFile = fullfile(evalDir, 'metrics.json');
-    if exist(metricsFile, 'file')
-        metricsText = fileread(metricsFile);
-        metricsJson = jsondecode(metricsText);
-        metrics.OSINR = metricsJson.best_overall.sisdr;
-        metrics.PESQ  = metricsJson.best_overall.pesq;
-        metrics.STOI  = metricsJson.best_overall.stoi;
-    else
-        metrics.OSINR = 0;
-        metrics.PESQ  = 0;
-        metrics.STOI  = 0;
-    end
-    
-    % --- 6. Save ONE .mat file (BEST_OVERALL) ---
-    matFileName = sprintf('%s_%s_5dB.mat', taskName, condition);
-    matFilePath = fullfile(taskDir, matFileName);
-    
-    save(matFilePath, 'target_signal', 'interference_signal', 'mixture_signal', ...
-         'rir_target', 'rir_interf', 'processed_signal', 'metrics', 'params', '-v7.3');
-    
-    fprintf('   - Created: %s (OSINR=%.2f, PESQ=%.2f, STOI=%.2f)\n', ...
-            matFileName, metrics.OSINR, metrics.PESQ, metrics.STOI);
 end
 
 
@@ -265,8 +269,38 @@ function createProcessTaskScript(modelInferenceDir, taskDir, filename, condition
         '    return os.path.join(SCRIPT_DIR, f"output_signal{sample_num}.wav")\n' ...
         '\n'], taskNum, conditionName, modelFile);
     
-    % Replace the main() function to take sample number
+    % Replace the main() function to take sample number and compute metrics
+    % NOTE: Using \n (not \\n) so sprintf converts them to actual newlines
     newMain = sprintf([...
+        'def compute_metrics(output, target, sr=16000):\n' ...
+        '    """Compute SI-SDR, PESQ, and STOI metrics using torchmetrics"""\n' ...
+        '    from torchmetrics.audio import ScaleInvariantSignalDistortionRatio, PerceptualEvaluationSpeechQuality, ShortTimeObjectiveIntelligibility\n' ...
+        '    \n' ...
+        '    # Convert to mono if stereo (average channels)\n' ...
+        '    if output.dim() > 1 and output.shape[0] > 1:\n' ...
+        '        output = output.mean(dim=0, keepdim=True)\n' ...
+        '    if target.dim() > 1 and target.shape[0] > 1:\n' ...
+        '        target = target.mean(dim=0, keepdim=True)\n' ...
+        '    \n' ...
+        '    # Ensure same length\n' ...
+        '    min_len = min(output.shape[-1], target.shape[-1])\n' ...
+        '    output = output[..., :min_len]\n' ...
+        '    target = target[..., :min_len]\n' ...
+        '    \n' ...
+        '    # SI-SDR\n' ...
+        '    sisdr = ScaleInvariantSignalDistortionRatio()\n' ...
+        '    sisdr_val = sisdr(output, target).item()\n' ...
+        '    \n' ...
+        '    # PESQ (needs 16kHz)\n' ...
+        '    pesq = PerceptualEvaluationSpeechQuality(sr, "wb")\n' ...
+        '    pesq_val = pesq(output, target).item()\n' ...
+        '    \n' ...
+        '    # STOI\n' ...
+        '    stoi = ShortTimeObjectiveIntelligibility(sr, extended=False)\n' ...
+        '    stoi_val = stoi(output, target).item()\n' ...
+        '    \n' ...
+        '    return {"SI-SDR": sisdr_val, "PESQ": pesq_val, "STOI": stoi_val}\n' ...
+        '\n\n' ...
         'def main():\n' ...
         '    parser = argparse.ArgumentParser(description="Task %s - %s Source Separation")\n' ...
         '    parser.add_argument("--sample", "-s", type=int, required=True, choices=[1, 2, 3],\n' ...
@@ -280,6 +314,7 @@ function createProcessTaskScript(modelInferenceDir, taskDir, filename, condition
         '    # Get paths from global config\n' ...
         '    input_file = get_input_path(args.sample)\n' ...
         '    output_file = get_output_path(args.sample)\n' ...
+        '    target_file = os.path.join(SCRIPT_DIR, f"source_signal{args.sample}.wav")\n' ...
         '    \n' ...
         '    device = torch.device(args.device)\n' ...
         '    print(f"Task %s - %s Source Separation")\n' ...
@@ -335,6 +370,17 @@ function createProcessTaskScript(modelInferenceDir, taskDir, filename, condition
         '    torchaudio.save(output_file, output, SAMPLE_RATE)\n' ...
         '    print(f"Saved: {output_file}")\n' ...
         '    print(f"Output duration: {output.shape[-1] / SAMPLE_RATE:.2f}s")\n' ...
+        '    \n' ...
+        '    # Compute metrics if target exists\n' ...
+        '    if os.path.exists(target_file):\n' ...
+        '        print("Computing metrics...")\n' ...
+        '        target = load_audio(target_file)\n' ...
+        '        target = target[:, :output.shape[-1]]  # Match length\n' ...
+        '        metrics = compute_metrics(output, target, SAMPLE_RATE)\n' ...
+        '        print(f"  SI-SDR: {metrics[''SI-SDR'']:.2f} dB")\n' ...
+        '        print(f"  PESQ:   {metrics[''PESQ'']:.2f}")\n' ...
+        '        print(f"  STOI:   {metrics[''STOI'']:.3f}")\n' ...
+        '    \n' ...
         '    print("Processing complete!")\n'], ...
         taskNum, conditionName, taskNum, conditionName);
     
@@ -373,3 +419,33 @@ function createProcessTaskScript(modelInferenceDir, taskDir, filename, condition
     fclose(fid);
 end
 
+
+%% ========================================================================
+function [rir_target, rir_interf, params] = generateFallbackRIR(condition, fs)
+    % Generate placeholder RIRs when no data source is available
+    
+    if strcmp(condition, 'Anechoic')
+        rir_target = [1, zeros(1, 4095); 1, zeros(1, 4095)];
+        rir_interf = [1, zeros(1, 4095); 1, zeros(1, 4095)];
+        rt60 = 0.0;
+    else
+        rt60 = 0.5;
+        t = (0:4095) / fs;
+        decay = exp(-3 * t / rt60);
+        rir_target = [randn(1, 4096) .* decay; randn(1, 4096) .* decay];
+        rir_target = rir_target / max(abs(rir_target(:)));
+        rir_interf = [randn(1, 4096) .* decay; randn(1, 4096) .* decay];
+        rir_interf = rir_interf / max(abs(rir_interf(:)));
+    end
+    
+    params.sampling_rate = fs;
+    params.mic_positions = [2.41, 2.45, 1.5; 2.49, 2.45, 1.5];
+    params.array_spacing = 0.08;
+    params.source_azimuth = 90;
+    params.interferer_azimuth = 40;
+    params.source_height = 1.5;
+    params.SNR_dB = 5;
+    params.SIR_dB = 0;
+    params.RT60 = rt60;
+    params.room_dimensions = [4.9, 4.9, 4.9];
+end

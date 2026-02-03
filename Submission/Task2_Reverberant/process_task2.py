@@ -369,6 +369,36 @@ def load_audio(path, sample_rate=16000):
     return waveform
 
 
+def compute_metrics(output, target, sr=16000):
+    """Compute SI-SDR, PESQ, and STOI metrics using torchmetrics"""
+    from torchmetrics.audio import ScaleInvariantSignalDistortionRatio, PerceptualEvaluationSpeechQuality, ShortTimeObjectiveIntelligibility
+    
+    # Convert to mono if stereo (average channels)
+    if output.dim() > 1 and output.shape[0] > 1:
+        output = output.mean(dim=0, keepdim=True)
+    if target.dim() > 1 and target.shape[0] > 1:
+        target = target.mean(dim=0, keepdim=True)
+    
+    # Ensure same length
+    min_len = min(output.shape[-1], target.shape[-1])
+    output = output[..., :min_len]
+    target = target[..., :min_len]
+    
+    # SI-SDR
+    sisdr = ScaleInvariantSignalDistortionRatio()
+    sisdr_val = sisdr(output, target).item()
+    
+    # PESQ (needs 16kHz)
+    pesq = PerceptualEvaluationSpeechQuality(sr, "wb")
+    pesq_val = pesq(output, target).item()
+    
+    # STOI
+    stoi = ShortTimeObjectiveIntelligibility(sr, extended=False)
+    stoi_val = stoi(output, target).item()
+    
+    return {"SI-SDR": sisdr_val, "PESQ": pesq_val, "STOI": stoi_val}
+
+
 def main():
     parser = argparse.ArgumentParser(description="Task 2 - Reverberant Source Separation")
     parser.add_argument("--sample", "-s", type=int, required=True, choices=[1, 2, 3],
@@ -382,6 +412,7 @@ def main():
     # Get paths from global config
     input_file = get_input_path(args.sample)
     output_file = get_output_path(args.sample)
+    target_file = os.path.join(SCRIPT_DIR, f"source_signal{args.sample}.wav")
     
     device = torch.device(args.device)
     print(f"Task 2 - Reverberant Source Separation")
@@ -437,6 +468,17 @@ def main():
     torchaudio.save(output_file, output, SAMPLE_RATE)
     print(f"Saved: {output_file}")
     print(f"Output duration: {output.shape[-1] / SAMPLE_RATE:.2f}s")
+    
+    # Compute metrics if target exists
+    if os.path.exists(target_file):
+        print("Computing metrics...")
+        target = load_audio(target_file)
+        target = target[:, :output.shape[-1]]  # Match length
+        metrics = compute_metrics(output, target, SAMPLE_RATE)
+        print(f"  SI-SDR: {metrics['SI-SDR']:.2f} dB")
+        print(f"  PESQ:   {metrics['PESQ']:.2f}")
+        print(f"  STOI:   {metrics['STOI']:.3f}")
+    
     print("Processing complete!")
 
 if __name__ == "__main__":

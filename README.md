@@ -158,7 +158,19 @@ python inference_Conformer.py -i input.wav -a 90 -o output.wav -m reverb_Conform
 
 ---
 
-### 5. Generate Submission
+### 5. Generate RIR Data for Submission
+
+```bash
+matlab -batch "run('generate_rir_data.m')"
+```
+
+Generates `rir_data.mat` containing Room Impulse Responses for:
+- **Anechoic** (RT60 = 0.0)
+- **Reverberant** (RT60 = 0.5)
+
+---
+
+### 6. Generate Submission
 
 ```bash
 matlab -batch "run('prepare_submission.m')"
