@@ -1,101 +1,96 @@
 clc; close all;
 
-            
 %% 1. CONFIGURATION
-    
-    % --- Paths (Update these if needed) ---
-    maleDir   = "D:\Dataset\Male";           
-    femaleDir = "D:\Dataset\Female";         
-    noiseDir  = "C:\Users\ironp\Downloads\SP Cup\matlab_stuff\MUSAN\noise";    
-    musicDir  = "C:\Users\ironp\Downloads\SP Cup\matlab_stuff\MUSAN\music";    
-    outputDatasetDir = '../Train_Dataset/anechoic';
-    
-    % --- Generation Settings ---
-    numSamplesToGenerate = 150000;
-    desiredLength_s      = 4.0;
-    fs                   = 16000;
-    desiredLength_samples = floor(desiredLength_s * fs);
-    
-    % --- Acoustic Settings ---
-    sir_dB            = 0;     % Signal-to-Interference Ratio
-    snr_dB            = 5;     % Signal-to-Noise Ratio is set to 5dB as defined in the problem statement
-    min_angle_sep_deg = 15;    % Min separation between sources in degrees
-    source_radius_m   = 1.0;
-    roomDimensions    = [4.9, 4.9, 4.9];
-    
-    % Mic Array (2 Mics)
-    micPositions      = [2.41, 2.45, 1.5;   
-                         2.49, 2.45, 1.5];
-    micCenter         = mean(micPositions, 1);
-    
-    c     = 343;   % Speed of sound
-    beta  = 0.0;   % RT60
-    n_rir = 4096;  % RIR Length
+maleDir   = "../Dataset_raw/Male";           
+femaleDir = "../Dataset_raw/Female";         
+noiseDir  = "../Dataset_raw/Noise";    
+musicDir  = "../Dataset_raw/Music"; 
+
+% Output folder
+outputDatasetDir = '../Train_Dataset/anechoic';
+
+% --- Generation Settings ---
+numSamplesToGenerate = 150000;
+desiredLength_s      = 4.0;
+fs                   = 16000;
+desiredLength_samples = floor(desiredLength_s * fs);
+
+% --- Acoustic Settings ---
+sir_dB            = 0;     % Signal-to-Interference Ratio
+snr_dB            = 5;     % Signal-to-Noise Ratio
+min_angle_sep_deg = 15;    % Min separation between sources in degrees
+source_radius_m   = 1.0;
+roomDimensions    = [4.9, 4.9, 4.9];
+
+% Mic Array (2 Mics)
+micPositions      = [2.41, 2.45, 1.5;   
+                     2.49, 2.45, 1.5];
+micCenter         = mean(micPositions, 1);
+
+c     = 343;   % Speed of sound
+beta  = 0.0;   % RT60 (Anechoic)
+n_rir = 4096;  % RIR Length
+
+if ~exist(outputDatasetDir, 'dir'), mkdir(outputDatasetDir); end
 
 
-    if ~exist(outputDatasetDir, 'dir'), mkdir(outputDatasetDir); end
+%% 2. FILE SCANNING & MEMORY OPTIMIZATION
+fprintf('1. Scanning Audio Files...\n');
+
+rawMale   = getFiles(maleDir);
+rawFemale = getFiles(femaleDir);
+rawNoise  = getFiles(noiseDir);
+rawMusic  = getFiles(musicDir);
+
+if isempty(rawMale), error('No Male files found! Check paths.'); end
+
+% --- Store file lists in shared memory ---
+fprintf('   - Storing file lists in shared memory...\n');
+cMale   = parallel.pool.Constant(rawMale);
+cFemale = parallel.pool.Constant(rawFemale);
+cNoise  = parallel.pool.Constant(rawNoise);
+cMusic  = parallel.pool.Constant(rawMusic);
 
 
-    %% 2. FILE SCANNING & MEMORY OPTIMIZATION
-    fprintf('1. Scanning Audio Files...\n');
-    
-    rawMale   = getFiles(maleDir);
-    rawFemale = getFiles(femaleDir);
-    rawNoise  = getFiles(noiseDir);
-    rawMusic  = getFiles(musicDir);
+%% 3. SAFE PARALLEL POOL SETUP
+SAFE_WORKERS = 4; 
+poolObj = gcp('nocreate');
+if isempty(poolObj)
+    parpool('local', SAFE_WORKERS);
+elseif poolObj.NumWorkers > SAFE_WORKERS
+    delete(poolObj);
+    parpool('local', SAFE_WORKERS);
+end
 
 
-    if isempty(rawMale), error('No Male files found! Check paths.'); end
+%% 4. RIR PRE-CALCULATION (CACHE)
+fprintf('2. Pre-calculating 3600 RIRs (This makes the loop fast)...\n');
+
+% Note: We still calculate 360 degrees to keep indexing logic simple and safe,
+% even though we only use 0-180.
+angle_step_deg = 0.1;
+num_angles = 360 / angle_step_deg; % 3600 positions
+tempCache = cell(num_angles, 1);
+
+% Pre-calculate RIRs in parallel
+parfor i_cache = 1:num_angles
+    angle_deg = (i_cache - 1) * angle_step_deg;
+    pos = getPositionFromAngle(angle_deg, source_radius_m, micCenter);
+    tempCache{i_cache} = rir_generator(c, fs, micPositions, pos, roomDimensions, beta, n_rir);
+end
+
+% Store massive RIR cache in Constant
+cRirCache = parallel.pool.Constant(tempCache);
+clear tempCache; % Clear from main RAM immediately
+fprintf('   - Cache built and optimized.\n');
 
 
-    % --- CRITICAL FIX: Use Constants to prevent RAM Crash ---
-    fprintf('   - Storing file lists in shared memory...\n');
-    cMale   = parallel.pool.Constant(rawMale);
-    cFemale = parallel.pool.Constant(rawFemale);
-    cNoise  = parallel.pool.Constant(rawNoise);
-    cMusic  = parallel.pool.Constant(rawMusic);
+%% 5. MAIN GENERATION LOOP
+fprintf('3. Starting Dataset Generation...\n');
 
-
-    %% 3. SAFE PARALLEL POOL SETUP
-    % Limit workers to 4 to prevent freezing. Increase only if you have >32GB RAM.
-    SAFE_WORKERS = 4; 
-    poolObj = gcp('nocreate');
-    if isempty(poolObj)
-        parpool('local', SAFE_WORKERS);
-    elseif poolObj.NumWorkers > SAFE_WORKERS
-        delete(poolObj);
-        parpool('local', SAFE_WORKERS);
-    end
-
-
-    %% 4. RIR PRE-CALCULATION (CACHE)
-    fprintf('2. Pre-calculating 3600 RIRs (This makes the loop fast)...\n');
-    
-    % Note: We still calculate 360 degrees to keep indexing logic simple and safe,
-    % even though we only use 0-180.
-    angle_step_deg = 0.1;
-    num_angles = 360 / angle_step_deg; % 3600 positions
-    tempCache = cell(num_angles, 1);
-    
-    % Pre-calculate RIRs in parallel
-    parfor i_cache = 1:num_angles
-        angle_deg = (i_cache - 1) * angle_step_deg;
-        pos = getPositionFromAngle(angle_deg, source_radius_m, micCenter);
-        tempCache{i_cache} = rir_generator(c, fs, micPositions, pos, roomDimensions, beta, n_rir);
-    end
-    
-    % --- CRITICAL FIX: Store massive RIR cache in Constant ---
-    cRirCache = parallel.pool.Constant(tempCache);
-    clear tempCache; % Clear from main RAM immediately
-    fprintf('   - Cache built and optimized.\n');
-
-
-    %% 5. MAIN GENERATION LOOP
-    fprintf('3. Starting Dataset Generation...\n');
-    
-    % Progress Queue
-    q = parallel.pool.DataQueue;
-    afterEach(q, @(x) updateProgress(x, numSamplesToGenerate));
+% Progress Queue
+q = parallel.pool.DataQueue;
+afterEach(q, @(x) updateProgress(x, numSamplesToGenerate));
     
     parfor i = 1:numSamplesToGenerate
         rng('shuffle'); % Ensure random variety

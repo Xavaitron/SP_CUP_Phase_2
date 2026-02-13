@@ -1,13 +1,13 @@
 clc; close all;
 
 %% 1. CONFIGURATION
-maleDir   = "D:\Dataset\Male";           
-femaleDir = "D:\Dataset\Female";         
-noiseDir  = "C:\Users\ironp\Downloads\SP Cup\matlab_stuff\MUSAN\noise";    
-musicDir  = "C:\Users\ironp\Downloads\SP Cup\matlab_stuff\MUSAN\music";    
+maleDir   = "../Dataset_raw/Male";           
+femaleDir = "../Dataset_raw/Female";         
+noiseDir  = "../Dataset_raw/Noise";    
+musicDir  = "../Dataset_raw/Music";   
 
 % Output folder
-outputDatasetDir = '../Train_Dataset/reverb';
+outputDatasetDir = '../Test_Dataset/reverb';
 
 % --- Generation Settings ---
 numSamplesToGenerate = 150000;
