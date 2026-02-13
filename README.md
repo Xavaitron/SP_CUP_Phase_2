@@ -86,7 +86,26 @@ mex rir_generator.cpp rir_generator_core.cpp
 
 ## 🚀 Pipeline
 
-### 1. Dataset Generation (MATLAB)
+### 1. Download Raw Dataset
+
+Download the raw audio files needed for dataset generation:
+
+1. Download `Dataset_raw.zip` from [Google Drive](https://drive.google.com/file/d/1hG6gk2BDHD-96WnAUOxVxm_p86jbgX9r/view?usp=sharing)
+2. Place the zip file in the project root (`SP_CUP_Phase_2/`)
+3. Extract it so the folder structure looks like:
+
+```
+SP_CUP_Phase_2/
+└── Dataset_raw/
+    ├── Male/       # Male speech files (.wav/.flac)
+    ├── Female/     # Female speech files (.wav/.flac)
+    ├── Noise/      # Noise files (.wav/.flac)
+    └── Music/      # Music files (.wav/.flac)
+```
+
+> **Note:** `Dataset_raw/` and `Dataset_raw.zip` are gitignored and will not be committed.
+
+### 2. Dataset Generation (MATLAB)
 
 ```matlab
 cd "Dataset Generation"
@@ -109,7 +128,7 @@ sample_XXXXX/
 
 ---
 
-### 2. Training
+### 3. Training
 
 ```bash
 cd "Model Inference"
@@ -124,7 +143,7 @@ RESUME_FROM = "reverb_Conformer.pth"       # or None
 
 ---
 
-### 3. Evaluation
+### 4. Evaluation
 
 ```bash
 cd "Model Inference"
@@ -142,7 +161,7 @@ OUTPUT_DIR = "evaluation_anechoic"
 
 ---
 
-### 4. Single-File Inference
+### 5. Single-File Inference
 
 ```bash
 python inference_Conformer.py -i input.wav -a 90 -o output.wav -m reverb_Conformer.pth -d cuda
@@ -158,7 +177,7 @@ python inference_Conformer.py -i input.wav -a 90 -o output.wav -m reverb_Conform
 
 ---
 
-### 5. Generate RIR Data for Submission
+### 6. Generate RIR Data for Submission
 
 ```bash
 matlab -batch "run('generate_rir_data.m')"
@@ -170,7 +189,7 @@ Generates `rir_data.mat` containing Room Impulse Responses for:
 
 ---
 
-### 6. Generate Submission
+### 7. Generate Submission
 
 ```bash
 matlab -batch "run('prepare_submission.m')"

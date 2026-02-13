@@ -10,7 +10,7 @@ musicDir  = "../Dataset_raw/Music";
 outputDatasetDir = '../Test_Dataset/anechoic';
 
 % --- Generation Settings ---
-numSamplesToGenerate = 150000;
+numSamplesToGenerate = 5000;
 desiredLength_s      = 4.0;
 fs                   = 16000;
 desiredLength_samples = floor(desiredLength_s * fs);
