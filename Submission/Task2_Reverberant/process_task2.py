@@ -1,39 +1,8 @@
 """
-Task 2 - Reverberant Source Separation (process_task2.py)
-=========================================================
-
-Self-contained inference script for angle-conditioned audio source separation
-under reverberant conditions (RT60 = 0.5) using a DCCRNConformer model (~10M params).
-
-This file contains BOTH the full model architecture definition AND the inference
-logic, so no external model code is needed - only the dependencies listed below.
-
-Setup:
-    pip install -r requirements.txt
-
-Dependencies:
-    - torch==2.6.0
-    - torchaudio==2.6.0
-    - torchmetrics==1.8.2  (only needed for metrics computation)
-    - numpy, soundfile, pesq, pystoi
-
-Required files in the same directory:
-    - reverb_Conformer.pth        - Trained model weights
-    - mixture_signal{1,2,3}.wav   - Stereo input mixtures (16kHz, 4s)
-    - target_signal{1,2,3}.wav    - Ground-truth targets (for metrics, optional)
-
-Usage:
-    python process_task2.py --sample <1|2|3> [--angle <degrees>] [--device <cpu|cuda>]
-
-Examples:
-    python process_task2.py --sample 1                  # CPU, default angle 90 deg
-    python process_task2.py --sample 2 --device cuda    # GPU acceleration
-    python process_task2.py --sample 3 --angle 45       # Custom target angle
-
-Output:
-    processed_signal{1,2,3}.wav - Separated target audio (mono, 16kHz)
-
-Sample mapping: 1 = Male+Female, 2 = Male+Music, 3 = Male+Noise
+Conformer Inference Script
+To run inference using the DCCRN-Conformer model on a stereo audio file
+with a specified target angle and save the enhanced output.
+Usage: python process_task2.py --sample <1/2/3> [--angle <degrees>] [--device <cpu/cuda>]
 """
 import argparse
 import torch

@@ -81,6 +81,17 @@ function prepare_submission()
     createProcessTaskScript(modelInferenceDir, task2Dir, 'process_task2.py', 'reverb');
     fprintf('   - Created: process_task2.py\n');
     
+    %% CREATE README AND REQUIREMENTS FILES
+    fprintf('\n5. Creating README and requirements files...\n');
+    createReadme(task1Dir, 'Task 1', 'Anechoic', 'anechoic', 'process_task1.py', 'anechoic_Conformer.pth', 'RT60 = 0.0');
+    fprintf('   - Created: Task1_Anechoic/README.md\n');
+    createReadme(task2Dir, 'Task 2', 'Reverberant', 'reverb', 'process_task2.py', 'reverb_Conformer.pth', 'RT60 = 0.5');
+    fprintf('   - Created: Task2_Reverberant/README.md\n');
+    createRequirements(task1Dir, 'Task 1 - Anechoic');
+    fprintf('   - Created: Task1_Anechoic/requirements.txt\n');
+    createRequirements(task2Dir, 'Task 2 - Reverberant');
+    fprintf('   - Created: Task2_Reverberant/requirements.txt\n');
+    
     %% DONE
     fprintf('\n======================================\n');
     fprintf('  SUBMISSION FOLDER READY!\n');
@@ -177,6 +188,7 @@ function processTask(evalDir, datasetDir, taskDir, taskName, condition, fs)
         audiowrite(fullfile(taskDir, sprintf('target_signal%d.wav', k)), target_signal, fs);
         audiowrite(fullfile(taskDir, sprintf('interference_signal%d.wav', k)), interference_signal, fs);
         audiowrite(fullfile(taskDir, sprintf('mixture_signal%d.wav', k)), mixture_signal, fs);
+        audiowrite(fullfile(taskDir, sprintf('processed_signal%d.wav', k)), processed_signal, fs);
         
         % Read actual metrics from JSON
         catKey = categoryKeys{k};
@@ -225,6 +237,7 @@ function processTask(evalDir, datasetDir, taskDir, taskName, condition, fs)
     fprintf('     * target_signal1/2/3.wav (Male targets)\n');
     fprintf('     * interference_signal1/2/3.wav (Female/Music/Noise)\n');
     fprintf('     * mixture_signal1/2/3.wav (inputs for process_task.py)\n');
+    fprintf('     * processed_signal1/2/3.wav (model outputs)\n');
 end
 
 
@@ -448,4 +461,94 @@ function [rir_target, rir_interf, params] = generateFallbackRIR(condition, fs)
     params.SIR_dB = 0;
     params.RT60 = rt60;
     params.room_dimensions = [4.9, 4.9, 4.9];
+end
+
+
+%% ========================================================================
+function createReadme(taskDir, taskLabel, condition, condLower, scriptName, modelFile, rt60Str)
+    % Generate a self-contained README.md for the submission folder
+    
+    filepath = fullfile(taskDir, 'README.md');
+    fid = fopen(filepath, 'w');
+    
+    fprintf(fid, '# %s - %s Source Separation\n\n', taskLabel, condition);
+    fprintf(fid, 'Angle-conditioned audio source separation under **%s** conditions (%s) using a DCCRN model (~10M parameters).\n\n', lower(condition), rt60Str);
+    fprintf(fid, '---\n\n');
+    fprintf(fid, '## Folder Contents\n\n');
+    fprintf(fid, '| File | Description |\n');
+    fprintf(fid, '|------|-------------|\n');
+    fprintf(fid, '| `%s` | Self-contained inference script (model definition + inference logic) |\n', scriptName);
+    fprintf(fid, '| `%s` | Trained model weights (%s condition) |\n', modelFile, lower(condition));
+    fprintf(fid, '| `mixture_signal{1,2,3}.wav` | Stereo input mixtures (16kHz, 4s) |\n');
+    fprintf(fid, '| `target_signal{1,2,3}.wav` | Ground-truth target signals (mono, 16kHz) |\n');
+    fprintf(fid, '| `interference_signal{1,2,3}.wav` | Interference sources (mono, 16kHz) |\n');
+    fprintf(fid, '| `requirements.txt` | Python dependencies |\n\n');
+    fprintf(fid, '**Sample mapping:** 1 = Male+Female, 2 = Male+Music, 3 = Male+Noise\n\n');
+    fprintf(fid, '---\n\n');
+    fprintf(fid, '## Setup\n\n');
+    fprintf(fid, '### Prerequisites\n');
+    fprintf(fid, '- Python 3.9+\n');
+    fprintf(fid, '- pip\n\n');
+    fprintf(fid, '### Install dependencies\n\n');
+    fprintf(fid, '```bash\n');
+    fprintf(fid, 'pip install -r requirements.txt\n');
+    fprintf(fid, '```\n\n');
+    fprintf(fid, '---\n\n');
+    fprintf(fid, '## How to Run\n\n');
+    fprintf(fid, '```bash\n');
+    fprintf(fid, 'python %s --sample <1|2|3>\n', scriptName);
+    fprintf(fid, '```\n\n');
+    fprintf(fid, '### Examples\n\n');
+    fprintf(fid, '```bash\n');
+    fprintf(fid, '# Process sample 1 (Male + Female) on CPU\n');
+    fprintf(fid, 'python %s --sample 1\n\n', scriptName);
+    fprintf(fid, '# Process sample 2 (Male + Music) on GPU\n');
+    fprintf(fid, 'python %s --sample 2 --device cuda\n\n', scriptName);
+    fprintf(fid, '# Process sample 3 (Male + Noise) with custom angle\n');
+    fprintf(fid, 'python %s --sample 3 --angle 45\n', scriptName);
+    fprintf(fid, '```\n\n');
+    fprintf(fid, '### Command-line arguments\n\n');
+    fprintf(fid, '| Argument | Short | Default | Description |\n');
+    fprintf(fid, '|----------|-------|---------|-------------|\n');
+    fprintf(fid, '| `--sample` | `-s` | *(required)* | Sample number: 1, 2, or 3 |\n');
+    fprintf(fid, '| `--angle` | `-a` | `90` | Target source angle in degrees (0-180) |\n');
+    fprintf(fid, '| `--device` | `-d` | `cpu` | Compute device: `cpu` or `cuda` |\n\n');
+    fprintf(fid, '---\n\n');
+    fprintf(fid, '## Output\n\n');
+    fprintf(fid, 'Running the script produces:\n');
+    fprintf(fid, '- `processed_signal{1,2,3}.wav` - The separated target audio (mono, 16kHz)\n\n');
+    fprintf(fid, 'If ground-truth `target_signal*.wav` files are present, the script automatically computes and prints evaluation metrics:\n');
+    fprintf(fid, '- **SI-SDR** (Scale-Invariant Signal-to-Distortion Ratio, in dB)\n');
+    fprintf(fid, '- **PESQ** (Perceptual Evaluation of Speech Quality, -0.5 to 4.5)\n');
+    fprintf(fid, '- **STOI** (Short-Time Objective Intelligibility, 0 to 1)\n\n');
+    fprintf(fid, '---\n\n');
+    fprintf(fid, '## Model Details\n\n');
+    fprintf(fid, '- **Architecture:** DCCRN (Deep Complex Convolution Recurrent Network + Dual-Path Conformer)\n');
+    fprintf(fid, '- **Parameters:** ~10M\n');
+    fprintf(fid, '- **Audio config:** 16kHz sample rate, STFT with n_fft=512, hop_length=128, fixed 3s input\n');
+    fprintf(fid, '- **Angle conditioning:** Target angle is injected via an MLP at the bottleneck layer\n');
+    fprintf(fid, '- **Condition:** Trained on %s data (%s, SIR = 0 dB, SNR = 5 dB)\n', lower(condition), rt60Str);
+    
+    fclose(fid);
+end
+
+
+%% ========================================================================
+function createRequirements(taskDir, taskLabel)
+    % Generate requirements.txt for the submission folder
+    
+    filepath = fullfile(taskDir, 'requirements.txt');
+    fid = fopen(filepath, 'w');
+    
+    fprintf(fid, '# Python dependencies for %s Source Separation\n', taskLabel);
+    fprintf(fid, '# Install with: pip install -r requirements.txt\n');
+    fprintf(fid, 'torch==2.6.0\n');
+    fprintf(fid, 'torchaudio==2.6.0\n');
+    fprintf(fid, 'torchmetrics==1.8.2\n');
+    fprintf(fid, 'numpy==2.4.1\n');
+    fprintf(fid, 'soundfile\n');
+    fprintf(fid, 'pesq\n');
+    fprintf(fid, 'pystoi\n');
+    
+    fclose(fid);
 end
