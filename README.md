@@ -1,6 +1,6 @@
-# SP CUP Phase 2 - Audio Source Separation with Conformer
+# SP CUP Phase 2 - Audio Source Separation with DCCRN
 
-Angle-conditioned audio source separation using a DCCRNConformer architecture for IEEE Signal Processing Cup 2026.
+Angle-conditioned audio source separation using a DCCRN architecture for IEEE Signal Processing Cup 2026.
 
 ---
 
@@ -120,7 +120,7 @@ test_reverb      % 5k samples, RT60=0.5, fixed angles (90°/40°)
 sample_XXXXX/
 ├── mixture.wav      # Stereo (target + interferer + noise)
 ├── target.wav       # Ground truth
-├── interference.wav # Scaled interferer
+├── interference.wav # Interference
 └── meta.json        # {target_angle, interf_angle, rt60, ...}
 ```
 
